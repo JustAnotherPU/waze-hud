@@ -195,7 +195,7 @@ bool split_line(const Gray &g, Line *line)
             top = std::min(top, c.y0), bottom = std::max(bottom, c.y1);
     for (const Comp &c : gl) {
         const int ch = c.y1 - c.y0 + 1;
-        line->point.push_back(ch * 100 < hmax * 35 && c.y0 > top + (bottom - top) * 55 / 100);
+        line->point.push_back(ch * 100 < hmax * 45 && c.y0 > top + (bottom - top) * 55 / 100);
         line->rel_h.push_back((float)ch / hmax);
         line->v.push_back(fit(mask, g.w, c, kGlyphN));
     }
@@ -423,6 +423,19 @@ bool Debounce::push(const Reading &r, Reading *out)
     return true;
 }
 
+Reading CardHold::pick(const Reading &r, bool from_card, int64_t now_ms)
+{
+    const bool fresh = now_ms - card_ms_ <= hold_ms_;
+    if (!from_card)
+        return fresh ? card_ : r;
+    Reading out = r;
+    if (out.distance.empty() && fresh && card_.maneuver == out.maneuver && !card_.distance.empty())
+        return card_;   /* not a new reading: the 3 s still run from the distance's */
+    card_ = out;
+    card_ms_ = now_ms;
+    return out;
+}
+
 std::string parse_distance(const std::string &text)
 {
     size_t i = 0;
@@ -431,7 +444,7 @@ std::string parse_distance(const std::string &text)
         num.push_back(text[i] == ',' ? '.' : text[i]), i++;
     const std::string unit = text.substr(i);
     if (num.empty() || !std::isdigit((unsigned char)num[0]) || !std::isdigit((unsigned char)num.back()) ||
-        std::count(num.begin(), num.end(), '.') > 1)
+        std::count(num.begin(), num.end(), '.') > 1 || (num[0] == '0' && num.size() > 1 && num[1] != '.'))
         return "";
     if (unit != "m" && unit != "km" && unit != "ft" && unit != "mi")
         return "";

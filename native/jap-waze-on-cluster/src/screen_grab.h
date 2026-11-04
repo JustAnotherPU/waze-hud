@@ -6,6 +6,7 @@
  * a thread turns each into luma and keeps the latest. The grabber runs only
  * while wanted (the HUD arrows are on) and is started again 3 s after it
  * exits. Measured on the unit: 1920x720 at 2 fps costs about 2% of a core
+ * (we take 4: the HUD half a second behind the card, not 1.5 s)
  * and coexists with the screencast. */
 #ifndef WOC_SCREEN_GRAB_H
 #define WOC_SCREEN_GRAB_H
@@ -26,7 +27,7 @@ struct ScreenGrabConfig {
     std::string screen = "center";
     std::string wayland_dir = "/run/wayland";
     std::string fifo = "/run/jap-waze-on-cluster/screen.fifo";
-    unsigned w = 1920, h = 720, fps = 2;
+    unsigned w = 1920, h = 720, fps = 4;
 };
 
 class ScreenGrab {

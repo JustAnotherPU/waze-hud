@@ -32,8 +32,8 @@
  *            displayed size (1088x480 px at 138x61 mm, view area the full
  *            frame) and the phone renders its cluster map at that size. The
  *            safe area, where the phone keeps its guidance UI, is the part of
- *            the frame the gauges and native readouts leave visible (504x368
- *            at 286,72). `--res WxH` picks another pixel size at the same
+ *            the frame the gauges, native readouts and guidance box leave visible
+ *            (504x228 at 286,72). `--res WxH` picks another pixel size at the same
  *            physical size, `--safe` another safe area; `--res stock`, and
  *            `--panel mid`, keep the build's stock geometry.
  *
@@ -80,8 +80,11 @@ var PROVEN = {
 var RES_DEFAULT = { w: 1088, h: 480, mmw: 138, mmh: 61 };
 /* The default safe area in the 1088x480 frame: x from BMW's own IC_MID safe
  * area (which lies inside the map area), y from below the native model badge
- * to inside the gauge mask's lower edge. Other --res sizes scale it. */
-var SAFE_DEFAULT = { x: 286, y: 72, w: 504, h: 368 };
+ * to above BMW's guidance box (y 285-396 in the frame, the car 2026-11-04):
+ * Waze puts its car at 78% of the safe area's height, so at 440 it sat under
+ * the box (y 360), at 300 it is above it (about 250). Other --res sizes
+ * scale it. */
+var SAFE_DEFAULT = { x: 286, y: 72, w: 504, h: 228 };
 var EDITS = ['variant', 'sink', 'selfstart', 'res'];
 
 function sha256(buf) { return crypto.createHash('sha256').update(buf).digest('hex'); }
@@ -296,7 +299,7 @@ function resFor(panel, res, safe) {
         g.safew = w; g.safeh = h; g.safex = 0; g.safey = 0;
     } else if (safe !== undefined) {
         var sm = /^([0-9]+)x([0-9]+)\+([0-9]+)\+([0-9]+)$/.exec(safe || '');
-        if (!sm) die('--safe needs WxH+X+Y (e.g. 504x368+286+72) or "full"');
+        if (!sm) die('--safe needs WxH+X+Y (e.g. 504x228+286+72) or "full"');
         g.safew = parseInt(sm[1], 10); g.safeh = parseInt(sm[2], 10);
         g.safex = parseInt(sm[3], 10); g.safey = parseInt(sm[4], 10);
         if (g.safew < 16 || g.safeh < 16 || g.safex + g.safew > w || g.safey + g.safeh > h)

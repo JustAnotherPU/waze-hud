@@ -316,7 +316,7 @@ test('an older full-frame safe area prompts Enable map, which writes the default
     /* A daemon that omits safe (before the safe area) is taken as current. */
     patch._broadcast({ ev: 'status', state: 'patched', panel: 'high', mode: 'avb', res: '1088x480' });
     await until('older daemon', () => c.statusText() === 'Patched — waiting for CarPlay' && c.patchStatus.safe === undefined);
-    assert.strictEqual(SAFE, '504x368+286+72');
+    assert.strictEqual(SAFE, '504x228+286+72');
     c.close();
 });
 

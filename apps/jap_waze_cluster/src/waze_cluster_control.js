@@ -76,7 +76,7 @@ const MAX_LINES = 30;
 const SIZE = '1088x480';
 /* The safe area Enable map writes: where the phone keeps its guidance UI,
  * inside the part of the map the gauges leave visible. */
-const SAFE = '504x368+286+72';
+const SAFE = '504x228+286+72';
 
 /* One newline-delimited-JSON stream socket, reconnecting while open.
  * link: 'down' | 'up' | 'absent' (ENOENT) | 'refused' (ECONNREFUSED) | 'failed'.

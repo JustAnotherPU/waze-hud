@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1
+
+Expects the CarPlay safe area of jap-waze-on-cluster 1.1.0 (504x228+286+72,
+above BMW's guidance box, so Waze draws its car above it); with the old one
+it kept asking to update the patch. Requires jap-waze-on-cluster 1.1.0.
+
 ## 1.0.0
 
 Waze HUD, JustAnotherPU's app (id jap_waze_cluster) for jap-waze-on-cluster

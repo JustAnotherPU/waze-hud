@@ -180,6 +180,29 @@ int main()
 
     ok("parse: plain and unit-less", parse_distance("300m") == "300 m" && parse_distance("300").empty() &&
                                          parse_distance("1.2.3km").empty() && parse_distance("?00m").empty());
+    ok("parse: a lost leading digit is no distance", parse_distance("00m").empty() && parse_distance("0m") == "0 m" &&
+                                                         parse_distance("07m").empty() &&
+                                                         parse_distance("0.5km") == "0.5 km" &&
+                                                         parse_distance("0,3mi") == "0.3 mi");
+
+    CardHold hold(3000);
+    Reading c50, c, mapr;
+    c50.maneuver = c.maneuver = "left";
+    c50.distance = "50 m";
+    mapr.maneuver = "straight";
+    ok("hold: no card read before: the map's reading", hold.pick(mapr, false, 0) == mapr);
+    ok("hold: a card reading passes", hold.pick(c50, true, 1000) == c50);
+    ok("hold: a miss within 3 s gives the card's", hold.pick(mapr, false, 2000) == c50);
+    ok("hold: the same turn without a distance keeps it", hold.pick(c, true, 2500) == c50);
+    ok("hold: a distance borrowed does not renew the 3 s", hold.pick(c, true, 3500) == c50 &&
+                                                               hold.pick(c, true, 4100) == c);
+    ok("hold: after 3 s the map's again", hold.pick(mapr, false, 7200) == mapr);
+    Reading r2 = c50;
+    r2.maneuver = "right";
+    r2.distance.clear();
+    ok("hold: another turn does not take the distance", hold.pick(r2, true, 7300) == r2);
+    ok("hold: no card and no map: the card's within 3 s", hold.pick(Reading(), false, 8000) == r2 &&
+                                                              hold.pick(Reading(), false, 10400).maneuver.empty());
 
     std::vector<uint8_t> img;
     bool drawn = true;

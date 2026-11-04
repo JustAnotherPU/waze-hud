@@ -217,7 +217,7 @@ change:
 | mm (→ `+0x10`) | `0x20ca32` | `ea000000 6e000000` (234x110) | `8a000000 3d000000` (138x61) |
 | px (→ `+0x08`, `+0x18`) | `0x20ca54` | `80070000 84030000` (1920x900) | `40040000 e0010000` (1088x480) |
 | view x,y (u16) + safe width | `0x20ca66` | `00000000 64020000` | `00000000 f8010000` |
-| safe height + safe x,y (u16) | `0x20ca74` | `0e020000 0202c000` | `70010000 1e014800` |
+| safe height + safe x,y (u16) | `0x20ca74` | `0e020000 0202c000` | `e4000000 1e014800` |
 
 The getters at `0x20ce00`–`0x20cf40` read these fields; the config built from
 them (`0x2078f1`) is what `SetVideoParams` and the view-area report carry.
@@ -255,15 +255,20 @@ and keeps its UI, such as the manoeuvre banner, inside the safe area; a car
 capture of the stock geometry shows exactly that. With a full-frame safe area
 the banner lands in the top-left corner, under the cluster's gauge mask.
 
-The default safe area is **504x368 at (286, 72)** (x 286–790, y 72–440):
+The default safe area is **504x228 at (286, 72)** (x 286–790, y 72–300):
 
 - x: BMW's own IC_MID safe area (504x456 at (708, 153) on the panel) lies
   inside the map area at (422, 134); in map-area coordinates it spans
   x 286–790, between the native speed readout (to x ≈ 170) and consumption
   readout (from x ≈ 800).
 - y: the native model badge covers the top of the area to y ≈ 64; at y 72 the
-  gauge mask's top-left corner is already lit; 440 is where the mask's lower
-  falloff starts.
+  gauge mask's top-left corner is already lit. The bottom stops above BMW's
+  own guidance box (y 285–396 in the frame, measured on the car 2026-11-04):
+  Waze draws its car at 78 % of the safe area's height, so with the area to
+  440 (the mask's lower falloff, until 0.7.75) the car sat at y 360, under
+  the box; to 300 it sits at about 250, above it. That is what a safe area
+  is for in CarPlay's cluster design: the head unit leaves its own overlays
+  out of it, and Apple Maps and Google Maps keep their car inside it.
 
 `--safe WxH+X+Y` writes another (at least 16x16, inside the frame), `--safe
 full` the whole frame; `--res` scales the default. `patchd` reports `res` and
@@ -493,7 +498,7 @@ for byte:
 - a 1280x720 stream with the UI in its top 1280x564 (margins 0x156 at
   0,0), the map slot's 2.27:1;
 - the safe area 592x432 at (336, 84): the CarPlay safe area of the map
-  slot, 504x368 at (286, 72), at the stream's scale, so the turn card stays
+  slot, 504x228 at (286, 72), at the stream's scale, so the turn card stays
   where the gauges leave the slot clear;
 - the density chosen (150–400 dpi in steps of 10, 180 by default; kept in
   `/var/opt/jap-waze-on-cluster/aa-density`). A lower one makes the phone take

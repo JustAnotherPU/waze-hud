@@ -8,12 +8,12 @@
 
 namespace woc {
 
-std::string turn_label(float deg)
+std::string turn_label(float deg, float slight_max)
 {
     const float a = std::fabs(deg);
     const char *side = deg < 0 ? "left" : "right";
     if (a < 20) return "straight";
-    if (a < 45) return std::string("slight_") + side;
+    if (a < slight_max) return std::string("slight_") + side;
     if (a < 120) return side;
     if (a < 165) return std::string("sharp_") + side;
     return "uturn_left";
@@ -187,6 +187,9 @@ Reading CardReader::read(const uint8_t *y, unsigned w, unsigned h)
     Reading r = arrow.read(g.px.data(), g.w, g.h);
     angle_ = arrow.angle();
     if (r.maneuver.empty()) return none;
+    /* the card's fork (keep, exit) reads 50 degrees, its turn 83 (the car,
+     * 2026-11-04); the map's perspective flattens turns, so only here */
+    r.maneuver = turn_label(angle_, 65);
     if (crop(y, w, h, c_.dist, &g)) {
         text_ = rec_.read_text(g);
         r.distance = parse_distance(text_);

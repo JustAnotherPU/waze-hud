@@ -160,6 +160,7 @@ private:
     long tpl_mtime_ = 0;
     void load_card_templates();
     Debounce debounce_;
+    CardHold hold_;
     std::unique_ptr<HudBackend> backend_;
     bool active_ = false;
     int64_t last_sample_ms_ = -1000000, flag_checked_ms_ = -1000000, last_dump_ms_ = -1000000;

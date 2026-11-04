@@ -205,6 +205,10 @@ HudArrows::HudArrows(const HudConfig &cfg, std::unique_ptr<HudBackend> backend)
         card_.reset(new CardReader(cfg_.card_cfg, &card_tpl_));
         grab_.reset(new ScreenGrab(cfg_.grab));
     }
+    if (cfg_.reader == "card") {
+        log_info("hud: CarPlay's card only: no arrow without it");
+        return;
+    }
     if (cfg_.reader == "map") {
         log_info("hud: reading the turn arrow on Waze's map (car at %u,%u)", cfg_.map.car_x, cfg_.map.car_y);
         return;
@@ -272,7 +276,9 @@ void HudArrows::sample(const uint8_t *y, unsigned w, unsigned h, int64_t now_ms)
         }
     }
     if (!from_card_)
-        last_read_ = cfg_.reader == "map" ? map_.read(y, w, h) : rec_.read(y, w, h);
+        last_read_ = cfg_.reader == "map" ? map_.read(y, w, h) : cfg_.reader == "banner" ? rec_.read(y, w, h) : Reading();
+    if (card_)
+        last_read_ = hold_.pick(last_read_, from_card_, now_ms);
     if (dumping && now_ms - last_dump_ms_ >= 1000)
         dump(y, w, h, last_read_, now_ms);
     Reading out;
@@ -298,6 +304,8 @@ void HudArrows::dump(const uint8_t *y, unsigned w, unsigned h, const Reading &r,
         if (crop(scr_.data(), cfg_.grab.w, cfg_.grab.h, cfg_.card_roi, &c))
             write_png(base + "-card-" + tag + ".png", c);
     }
+    if (cfg_.reader == "card")
+        return;
     if (cfg_.reader == "map") {
         char a[32];
         std::snprintf(a, sizeof a, "%s%ld", map_.angle() < 0 ? "L" : "R", std::lround(std::fabs(map_.angle())));

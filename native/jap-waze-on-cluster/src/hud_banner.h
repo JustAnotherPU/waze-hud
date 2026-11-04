@@ -109,8 +109,25 @@ private:
     Reading cand_, shown_;
 };
 
+/* The centre screen card's reading kept over a missed read: the card is read
+ * at 2 fps and misses some frames (seen on the car 2026-11-04: "left 50 m",
+ * "left", "left 70 m" a second apart), and a miss fell back to the map,
+ * which has no distance. For hold_ms after a card reading, a read without
+ * the card gives that card reading again; a card reading of the same
+ * manoeuvre without a distance keeps the last distance. */
+class CardHold {
+public:
+    explicit CardHold(int64_t hold_ms = 3000) : hold_ms_(hold_ms) {}
+    Reading pick(const Reading &r, bool from_card, int64_t now_ms);
+
+private:
+    int64_t hold_ms_, card_ms_ = -1000000000;
+    Reading card_;
+};
+
 /* The distance from text such as "300m", "1.2km", "0,3mi": "300 m",
- * "1.2 km"; empty when it is none of those. */
+ * "1.2 km"; empty when it is none of those, or when a digit was lost
+ * ("00 m", "07 m": a leading zero then a digit; "0 m" is Waze at the turn). */
 std::string parse_distance(const std::string &text);
 
 /* An 8-bit grey PNG (stored deflate) of g, and a binary PGM reader. */

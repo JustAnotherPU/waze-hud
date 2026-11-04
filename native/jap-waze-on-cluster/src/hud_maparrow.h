@@ -33,8 +33,9 @@ struct MapArrowConfig {
 };
 
 /* straight, slight_*, left/right, sharp_*, uturn_left (any turn past 165
- * degrees: right-hand traffic) for a signed angle in degrees. */
-std::string turn_label(float deg);
+ * degrees: right-hand traffic) for a signed angle in degrees; slight below
+ * slight_max. */
+std::string turn_label(float deg, float slight_max = 45);
 
 class MapArrowReader {
 public:
@@ -61,7 +62,7 @@ private:
  * templates. Its distance is read with glyph templates (dist-*.pgm, made by
  * tools/hud_font_templates.py); unknown glyphs leave the distance out. */
 struct CardConfig {
-    Rect icon{150, 36, 100, 84}, dist{255, 55, 300, 44}, plain{580, 30, 80, 80};
+    Rect icon{150, 26, 85, 90}, dist{236, 40, 320, 60}, plain{580, 30, 80, 80};
 };
 
 class CardReader {

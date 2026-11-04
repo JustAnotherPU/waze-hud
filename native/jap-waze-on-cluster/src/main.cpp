@@ -253,14 +253,18 @@ int serve(const Config &cfg)
         return 1;
     }
     hc.reader = cfg.str("hud_reader");
-    if (hc.reader != "map" && hc.reader != "banner") {
-        log_error("hud_reader must be map or banner");
+    if (hc.reader != "card" && hc.reader != "map" && hc.reader != "banner") {
+        log_error("hud_reader must be card, map or banner");
         return 1;
     }
     hc.map.car_x = (unsigned)cfg.num("hud_car_x");
     hc.map.car_y = (unsigned)cfg.num("hud_car_y");
     hc.map.min_luma = (unsigned)cfg.num("hud_min_luma");
     hc.card = cfg.num("hud_card") == 1;
+    if (hc.reader == "card" && !hc.card) {
+        log_error("hud_reader = card needs hud_card = 1");
+        return 1;
+    }
     if (!parse_rect(cfg.str("hud_card_icon_rect"), &hc.card_cfg.icon) ||
         !parse_rect(cfg.str("hud_card_dist_rect"), &hc.card_cfg.dist) ||
         !parse_rect(cfg.str("hud_card_plain_rect"), &hc.card_cfg.plain) || !parse_rect(cfg.str("hud_card_roi"), &hc.card_roi)) {
@@ -549,10 +553,10 @@ void define_keys(Config *cfg)
     cfg->define("hud_mode", "arrows");
     cfg->define("hud_backend", "native");
     cfg->define("hud_rect", "240x160+280+160");
-    cfg->define("hud_reader", "map");
+    cfg->define("hud_reader", "card");
     cfg->define("hud_card", "1");
-    cfg->define("hud_card_icon_rect", "100x84+150+36");
-    cfg->define("hud_card_dist_rect", "300x44+255+55");
+    cfg->define("hud_card_icon_rect", "85x90+150+26");
+    cfg->define("hud_card_dist_rect", "320x60+236+40");
     cfg->define("hud_card_plain_rect", "80x80+580+30");
     cfg->define("hud_card_roi", "580x220+120+0");
     cfg->define("hud_car_x", "544");
@@ -564,7 +568,7 @@ void define_keys(Config *cfg)
     cfg->define("hud_templates", "/var/opt/jap-waze-on-cluster/hud-templates");
     cfg->define("hud_builtin_icons", "0");
     cfg->define("hud_min_score", "60");
-    cfg->define("hud_sample_ms", "400");
+    cfg->define("hud_sample_ms", "250");
     cfg->define("hud_stable", "2");
     cfg->define("hud_dump_flag", "/tmp/jap-woc-hud-dump");
     cfg->define("hud_dump_dir", "/tmp/jap-woc-hud");

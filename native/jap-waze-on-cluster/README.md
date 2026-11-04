@@ -334,15 +334,25 @@ The cluster map is unchanged. Two sources, in order (seen on the car
 1. **The centre screen's CarPlay card** (`hud_card = 1`): iOS draws Waze's
    arrow icon, the distance in SF Pro Bold and the street at the top left of
    the CarPlay screen. While the arrows are on, the unit's own
-   `winston-grabber` hands us the centre screen, raw, 1920x720 at 2 fps
-   (about 2% of a core; it runs next to the screencast tool). The icon is
+   `winston-grabber` hands us the centre screen, raw, 1920x720 at 4 fps
+   (2 fps measured at about 2% of a core; it runs next to the screencast tool). The icon is
    binarised and read as an arrow (no icon templates: the angle between its
    stem and its head names the turn); the distance is read with glyph
    templates `tools/hud_font_templates.py OUT_DIR <font>` renders from a
    copy of SF Pro you supply (Apple's font: none ships here; install the
    result on your own unit only, never commit it). Without them the arrow
    shows and the distance does not. The card is only there
-   while CarPlay is on the centre screen.
+   while CarPlay is on the centre screen. A card reading holds for 3 s: a
+   frame the card misses gives it again rather than the map's arrow, and a
+   read of the same arrow without its distance keeps the last one (a test
+   drive: 56 % of arrows had none, from misses a second apart). A distance
+   with a leading zero then a digit ("00 m") lost a digit and is none. The
+   card moves up when lane arrows show under it: the rects cover both places
+   (before, the first digit was cut: "500 m" read "f00m"). Its fork icons
+   (keep, exit) read 50 degrees, its turns 83: slight below 65.
+   With `hud_reader = card` (the default) the card is the only source: no
+   card, no arrow (the HUD clears 3 s after it goes). The readers below
+   stay for `hud_reader = map` or `banner`.
 2. **The arrow on Waze's cluster map** (`hud_reader = map`): the white arrow
    Waze draws on the route at the next junction; its stem is the end nearer
    the chevron (`hud_car_x/y`). No distance. Any white part with a thick
@@ -621,7 +631,7 @@ Its sites:
 | variant | jump-table slot for `KI_KOMBI_VARIANT` 7 → IC_HIGH or IC_MID | 4 B at `0x2ba4f0` |
 | sink | second-stream sink URL: stock `avb://`, or `udp://…`, `file://…` | ≤ 59 B at `0x2a20b0` |
 | selfstart | `onSuggestUi`'s `setStreamStatus(AVAILABLE)` call → `requestStream()` | rel32 at `0x18176c` |
-| resolution | IC_HIGH geometry → 1088x480 px at 138x61 mm, safe area 504x368+286+72 | four 8 B immediates at `0x20ca32`–`0x20ca7c` |
+| resolution | IC_HIGH geometry → 1088x480 px at 138x61 mm, safe area 504x228+286+72 | four 8 B immediates at `0x20ca32`–`0x20ca7c` |
 
 `patchd` and the install hook apply `--panel high` with the stock sink.
 `woc-patch.sh` is the shell path, for experiments: `status`, `probe`,

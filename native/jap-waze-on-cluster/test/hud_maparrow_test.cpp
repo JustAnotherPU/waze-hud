@@ -122,6 +122,10 @@ int main()
 
     /* plain arrows like Waze's: a thick polyline from below, a triangle head,
      * at the turn angle (screen, right positive) */
+    ok("card: a fork (50) is slight, a turn (83) is not; the map's 50 a turn",
+       turn_label(50, 65) == "slight_right" && turn_label(-50, 65) == "slight_left" && turn_label(83, 65) == "right" &&
+           turn_label(50) == "right");
+
     struct Case { const char *want; float deg; } cases[] = {
         {"straight", 0}, {"slight_left", -35}, {"slight_right", 35}, {"left", -90}, {"right", 90},
         {"sharp_left", -140}, {"sharp_right", 140}, {"uturn_left", -180}};

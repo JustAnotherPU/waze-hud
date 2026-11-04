@@ -59,13 +59,13 @@ Files modified (old path -> new path where moved):
   apps/robertn_waze_cluster/README.md -> apps/jap_waze_cluster/README.md
   apps/robertn_waze_cluster/mgu-app.json -> apps/jap_waze_cluster/mgu-app.json
   apps/robertn_waze_cluster/release.json -> apps/jap_waze_cluster/release.json
-  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/CHANGELOG.md -> apps/jap_waze_cluster/jap_waze_cluster@1.0.0/CHANGELOG.md
-  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/npm-shrinkwrap.json -> apps/jap_waze_cluster/jap_waze_cluster@1.0.0/npm-shrinkwrap.json
-  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/package.json -> apps/jap_waze_cluster/jap_waze_cluster@1.0.0/package.json
-  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/rhmiData/application.json -> apps/jap_waze_cluster/jap_waze_cluster@1.0.0/rhmiData/application.json
-  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/rhmiData/uiDescriptions/ID7/application.xml -> apps/jap_waze_cluster/jap_waze_cluster@1.0.0/rhmiData/uiDescriptions/ID7/application.xml
-  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/rhmiData/uiDescriptions/ID7/uiDescription.json -> apps/jap_waze_cluster/jap_waze_cluster@1.0.0/rhmiData/uiDescriptions/ID7/uiDescription.json
-  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/rhmiData/variantGroups/Common/texts/en_GB.json -> apps/jap_waze_cluster/jap_waze_cluster@1.0.0/rhmiData/variantGroups/Common/texts/en_GB.json
+  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/CHANGELOG.md -> apps/jap_waze_cluster/jap_waze_cluster@1.0.1/CHANGELOG.md
+  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/npm-shrinkwrap.json -> apps/jap_waze_cluster/jap_waze_cluster@1.0.1/npm-shrinkwrap.json
+  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/package.json -> apps/jap_waze_cluster/jap_waze_cluster@1.0.1/package.json
+  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/rhmiData/application.json -> apps/jap_waze_cluster/jap_waze_cluster@1.0.1/rhmiData/application.json
+  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/rhmiData/uiDescriptions/ID7/application.xml -> apps/jap_waze_cluster/jap_waze_cluster@1.0.1/rhmiData/uiDescriptions/ID7/application.xml
+  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/rhmiData/uiDescriptions/ID7/uiDescription.json -> apps/jap_waze_cluster/jap_waze_cluster@1.0.1/rhmiData/uiDescriptions/ID7/uiDescription.json
+  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/rhmiData/variantGroups/Common/texts/en_GB.json -> apps/jap_waze_cluster/jap_waze_cluster@1.0.1/rhmiData/variantGroups/Common/texts/en_GB.json
   apps/robertn_waze_cluster/src/logs_control.js -> apps/jap_waze_cluster/src/logs_control.js
   apps/robertn_waze_cluster/src/robertn_waze_cluster.js -> apps/jap_waze_cluster/src/jap_waze_cluster.js
   apps/robertn_waze_cluster/src/waze_cluster_control.js -> apps/jap_waze_cluster/src/waze_cluster_control.js
@@ -130,4 +130,4 @@ Files only moved, content unchanged: the rest of native/waze-on-cluster/
 (now native/jap-waze-on-cluster/) and apps/robertn_waze_cluster/ (now
 apps/jap_waze_cluster/), among them the app icon
   apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/rhmiData/variantGroups/Common/images/robertn_waze_cluster_icon.png
-  -> apps/jap_waze_cluster/jap_waze_cluster@1.0.0/rhmiData/variantGroups/Common/images/jap_waze_cluster_icon.png
+  -> apps/jap_waze_cluster/jap_waze_cluster@1.0.1/rhmiData/variantGroups/Common/images/jap_waze_cluster_icon.png

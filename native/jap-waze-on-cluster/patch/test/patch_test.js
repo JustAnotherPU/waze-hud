@@ -32,8 +32,8 @@ function callBytes(buf) { return buf.slice(CALL, CALL + CALL_LEN).toString('hex'
 var RES_OFFS = [0x20ca30, 0x20ca52, 0x20ca64, 0x20ca72];
 function resImmediates(buf) { return RES_OFFS.map(function (o) { return buf.slice(o, o + 10).toString('hex'); }); }
 var RES_STOCK = ['48baea0000006e000000', '48b88007000084030000', '48b80000000064020000', '48b80e0200000202c000'];
-/* 1088x480 at 138x61 mm, view offset (0,0), safe 504x368 at (286,72). */
-var RES_DEFAULT = ['48ba8a0000003d000000', '48b840040000e0010000', '48b800000000f8010000', '48b8700100001e014800'];
+/* 1088x480 at 138x61 mm, view offset (0,0), safe 504x228 at (286,72). */
+var RES_DEFAULT = ['48ba8a0000003d000000', '48b840040000e0010000', '48b800000000f8010000', '48b8e40000001e014800'];
 /* The same size with the safe area the whole frame (--safe full). */
 var RES_FULLSAFE = ['48ba8a0000003d000000', '48b840040000e0010000', '48b80000000040040000', '48b8e001000000000000'];
 function inResRegion(x) { return RES_OFFS.some(function (o) { return x >= o + 2 && x < o + 10; }); }
@@ -91,10 +91,10 @@ try {
         JSON.stringify(d.map(function (x){return '0x'+x.toString(16);})));
     ok('slot = IC_HIGH (bcf2f7ff)', fs.readFileSync(tgt).slice(SLOT, SLOT + 4).toString('hex') === 'bcf2f7ff');
     ok('call retargeted to requestStream', callBytes(fs.readFileSync(tgt)) === CALL_SELF, callBytes(fs.readFileSync(tgt)));
-    ok('res immediates advertise 1088x480 at 138x61mm, safe 504x368 at 286,72',
+    ok('res immediates advertise 1088x480 at 138x61mm, safe 504x228 at 286,72',
         JSON.stringify(resImmediates(fs.readFileSync(tgt))) === JSON.stringify(RES_DEFAULT), JSON.stringify(resImmediates(fs.readFileSync(tgt))));
     r = run(['status', '--target', tgt]);
-    ok('status: avb mode is SELF-START + sink ORIGINAL + res PATCHED', /selfstart:\s+SELF-START/.test(r.out) && /sink:\s+ORIGINAL/.test(r.out) && /res:\s+PATCHED \(IC_HIGH advertises 1088x480 at 138x61mm, safe 504x368 at 286,72\)/.test(r.out), r.out);
+    ok('status: avb mode is SELF-START + sink ORIGINAL + res PATCHED', /selfstart:\s+SELF-START/.test(r.out) && /sink:\s+ORIGINAL/.test(r.out) && /res:\s+PATCHED \(IC_HIGH advertises 1088x480 at 138x61mm, safe 504x228 at 286,72\)/.test(r.out), r.out);
     r = run(['verify', '--target', tgt]);
     ok('verify: high avb exits 0 with res 1088x480', r.code === 0 && /res 1088x480/.test(r.out), r.out);
 
@@ -294,7 +294,7 @@ try {
     r = run(['apply', '--target', e123, '--panel', 'high', '--res', '800x360', '--yes']);
     ok('custom --res 800x360 applies at 138x61mm', r.code === 0 && /resolution -> 800x360 at 138x61mm/.test(r.out), r.out);
     r = run(['status', '--target', e123]);
-    ok('custom --res reads back as PATCHED 800x360 with the safe area scaled', /res:\s+PATCHED \(IC_HIGH advertises 800x360 at 138x61mm, safe 371x276 at 210,54\)/.test(r.out), r.out);
+    ok('custom --res reads back as PATCHED 800x360 with the safe area scaled', /res:\s+PATCHED \(IC_HIGH advertises 800x360 at 138x61mm, safe 371x171 at 210,54\)/.test(r.out), r.out);
     r = run(['apply', '--target', e123, '--panel', 'high', '--res', '1920x1080', '--yes']);
     ok('a 1920-wide custom res is labelled by its size, not stock', r.code === 0 && /resolution -> 1920x1080 at 138x61mm/.test(r.out) && !/resolution -> stock/.test(r.out), r.out);
     /* A unit patched at an earlier default size: Enable (no --res) rewrites
@@ -334,7 +334,7 @@ try {
     ok('full-frame safe: verify passes', r.code === 0 && /res 1088x480/.test(r.out), r.out);
     r = run(['apply', '--target', fs1, '--panel', 'high', '--yes']);
     ok('full-frame safe: Enable writes the default safe area', r.code === 0 &&
-        /resolution -> 1088x480 at 138x61mm, safe 504x368 at 286,72/.test(r.out) && !/variant ->|self-start ->|sink ->/.test(r.out), r.out);
+        /resolution -> 1088x480 at 138x61mm, safe 504x228 at 286,72/.test(r.out) && !/variant ->|self-start ->|sink ->/.test(r.out), r.out);
     var d5 = diffs(bfs, fs.readFileSync(fs1));
     var SAFE_OFFS = [0x20ca64, 0x20ca72];
     ok('full-frame safe: Enable changed only the safe-area immediates', d5.length >= 1 &&
