@@ -1,1 +1,1 @@
-{ "build": "node tools/build.js", "requires": { "jap-waze-on-cluster": "1.1.0" }, "uninstallable": true, "mguHmi": ["ID7"] }
+{ "build": "node tools/build.js", "requires": { "jap-waze-on-cluster": "1.1.1" }, "uninstallable": true, "mguHmi": ["ID7"] }

@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "id": "jap_waze_cluster",
-  "version": "1.0.1",
-  "tree": "jap_waze_cluster@1.0.1",
+  "version": "1.0.2",
+  "tree": "jap_waze_cluster@1.0.2",
   "modules": [
     "src/jap_waze_cluster.js",
     "src/waze_cluster_control.js",

@@ -121,6 +121,7 @@ class WazeClusterApp extends OnlineApp {
         this._sawForeground = false;
         this._popAsked = false;      /* the pop-up was shown this time the app is visible */
         this._confirmUntil = 0;      /* the page button's second press counts until then */
+        this._enableConfirmUntil = 0;   /* Enable map's, on an untested carplay build */
         this._shutdownPromise = null;
         this._listTimer = null;
         this._control = new WazeClusterControl({ log: logger });
@@ -198,7 +199,19 @@ class WazeClusterApp extends OnlineApp {
         if (missing.length) {
             return Promise.reject(new Error(`uiDescription lacks ${missing.join(', ')}`));
         }
-        this._bind(ENABLE_NAME, () => this._control.enableMap());
+        /* An untested carplay build takes a second press: a crash there
+         * restarts the head unit until recovery restores the original. */
+        this._bind(ENABLE_NAME, () => {
+            const ps = this._control.patchStatus;
+            if (ps && /^untested/.test(ps.conflict || '') && Date.now() >= this._enableConfirmUntil) {
+                this._enableConfirmUntil = Date.now() + TAKEOVER_CONFIRM_MS;
+                setTimeout(() => this._render(), TAKEOVER_CONFIRM_MS + 50);
+            } else {
+                this._enableConfirmUntil = 0;
+                this._control.enableMap();
+            }
+            this._render();
+        });
         this._bind(DISABLE_NAME, () => this._control.disableMap());
         this._bind(AA_ENABLE_NAME, () => this._control.enableAa());
         this._bind(AA_DISABLE_NAME, () => this._control.disableAa());
@@ -454,7 +467,9 @@ class WazeClusterApp extends OnlineApp {
         if (!this._state || this._shutdownPromise) {
             return;
         }
-        this._write(STATUS_NAME, this._control.statusText());
+        this._write(STATUS_NAME, Date.now() < this._enableConfirmUntil
+            ? 'Untested carplay build: press Enable map again to patch it. A CarPlay crash restarts the head unit; recovery restores the original after two'
+            : this._control.statusText());
         this._write(SETUP_NAME, SETUP_TEXT);
         this._write(CAPTURE_NAME, this._control.captureButtonText());
         this._write(CAPTURE_STATUS, this._control.captureText());

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.2
+
+On a carplay build no car has run patched (`untested carplay build`),
+Enable map first warns that a CarPlay crash restarts the head unit, and
+patches only on a second press within 8 seconds. Requires
+jap-waze-on-cluster 1.1.1, which leaves CarPlay alone on a cluster coding
+other than KI_KOMBI_VARIANT 7.
+
 ## 1.0.1
 
 Expects the CarPlay safe area of jap-waze-on-cluster 1.1.0 (504x228+286+72,

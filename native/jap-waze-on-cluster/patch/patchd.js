@@ -359,6 +359,7 @@ function readState(cb) {
             : !known ? 'not patchable' + (unknownWhy ? ': ' + unknownWhy[1] : '')
             : !hasBackup && !pristine ? 'carplay was modified by something else'
             : !hasBackup && !proven ? 'untested carplay build'
+            : !hasBackup && unsupported(readCoding(CODING)) ? 'not supported on this car (KI_KOMBI_VARIANT ' + readCoding(CODING).variant + ')'
             : foreignStart(CP);
         /* A change waiting for the next head-unit start: the running carplay is
          * not the binary on disk, so neither state applies to it yet. */
@@ -424,6 +425,11 @@ function readAaState(cb) {
     });
 }
 var AA_CODING = require('./aapd_patch.js').CODING.proven;
+var readCoding = require('./aapd_patch.js').readCoding;
+/* The carplay patch is for the cluster aapd's is (variant 7): 9 and 10 have
+ * the stock CarPlay cluster map, which the patch would only rescale. An
+ * unreadable coding blocks nothing: the patcher's own gates still apply. */
+function unsupported(cd) { return cd.variant !== undefined && cd.variant !== AA_CODING; }
 
 /* The density and turn-card setting the owner chose, else the defaults. */
 function aaDensity() {

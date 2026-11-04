@@ -11,6 +11,13 @@ CarPlay sends Apple Maps' and Google Maps' guidance: **BMW's own HUD arrows
 and distance, for Waze**. The CarPlay (or Android Auto) map is shown on the
 instrument cluster as well.
 
+> **Use at your own risk.** This project patches programs on your car's head
+> unit. It is not affiliated with or endorsed by BMW AG, Apple, Google or
+> Waze; their names are used only to say what it works with. It may affect
+> your warranty. The HUD arrow is read from the screen's pixels and can be
+> wrong, late or missing: follow Waze, not the HUD, and keep your eyes on
+> the road.
+
 | Path | |
 |---|---|
 | [`native/jap-waze-on-cluster`](native/jap-waze-on-cluster) | the tool: the carplay and aapd patches, the map capture for the cluster, the HUD arrows (`hudguide`) |
@@ -20,13 +27,34 @@ instrument cluster as well.
 
 ## Requirements
 
-- A BMW with an iDrive 7 head unit (MGU, ID7) and CarPlay (Android Auto for
-  the cluster map only, where the car supports it).
+- A BMW with an iDrive 7 head unit (MGU, ID7), the 12.3" centre screen
+  (1920x720) and CarPlay (Android Auto for the cluster map only, where the
+  car supports it).
+- The 12.3" instrument cluster coded `KI_KOMBI_VARIANT` 7, the one without
+  the stock CarPlay cluster map. On other codings the tool leaves CarPlay as
+  it is and the app says `not supported on this car`.
 - The mgu Store with `mgu-deploy` 0.7.11 or later (the Store brings it).
 - Two Store sources: this repository and `robertnisipeanu/idrive-apps`,
-  which publishes `cluster-render` 0.3.7, the renderer the tool requires.
+  which publishes `cluster-render` 0.3.7 or later, the renderer the tool
+  requires.
 
-Tested on a BMW with iDrive 7 (MGU), with an iPhone running Waze over CarPlay.
+### Tested on
+
+One BMW X5 (G05), with an iPhone running Waze over CarPlay:
+
+| | |
+|---|---|
+| Head unit | MGU, firmware P18_23w44.2-1-3 |
+| `carplay` | 22.28.3+gitr624+993efc1-r0.14 (build-id `5de62156…`) |
+| `aapd` | 22.39.3+gitrAUTOINC+d5a1db18c4-r0 |
+| Cluster coding | `KI_KOMBI_VARIANT` 7 |
+
+Only these builds are patched as installed. On any other `carplay` build the
+install leaves it untouched and the app shows `untested carplay build`;
+**Enable map** then patches it only after a second press, since no car has
+run that build patched (a CarPlay crash restarts the head unit, and boot
+recovery restores the original after two). Reports from other cars and
+firmware are welcome in the issues.
 
 ## Install
 
@@ -41,11 +69,12 @@ Tested on a BMW with iDrive 7 (MGU), with an iPhone running Waze over CarPlay.
 5. Set **Instrument cluster > Central display area** to **Map view** and
    start a route in Waze.
 
-The HUD shows Waze's arrow (read from the CarPlay card on the centre screen,
-else from the arrow on Waze's cluster map). The distance under it needs
-glyph templates you make from your own copy of SF Pro
+The HUD shows Waze's arrow and distance, read from the CarPlay card on the
+centre screen; without the card (Waze's own screen hidden, another app on
+top), it shows no arrow. The distance needs glyph templates you make from
+your own copy of SF Pro
 (`native/jap-waze-on-cluster/tools/hud_font_templates.py`; no font ships
-here). Without them, the arrow is expected to show without the distance. The drawn-image backend
+here). The drawn-image backend
 (`hud_backend = image`) is an optional fallback;
 [the tool's README](native/jap-waze-on-cluster/README.md#hud-arrows) has
 both.
@@ -84,6 +113,10 @@ previous version is kept.
 
 ## Not tested yet
 
+- The arrow without the glyph templates (it is meant to show without a
+  distance).
+- Left-hand traffic (UK, Ireland, Australia, Japan): the HUD guidance is
+  sent as right-hand traffic, so roundabout exits may be drawn mirrored.
 - Handing over between Waze and Apple Maps (or Google Maps) during one drive.
 - A route in BMW's own navigation while Waze guides on the phone (the HUD
   guidance is meant to give way to it).

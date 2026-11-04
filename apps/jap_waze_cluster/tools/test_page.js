@@ -242,6 +242,22 @@ async function main() {
         assert.deepStrictEqual(render.received, [], 'no command to the render');
         console.log('ok   Disable map while patched, Enable map while not; presses go to the patch daemon, none to the render');
 
+        /* An untested carplay build: Enable map warns first, the second press applies. */
+        const state = patch.state, applies = patch.count('apply');
+        patch.conflict = 'untested carplay build';
+        patch.announce('original', 'high', null);
+        await until('untested: Enable map offered', () => byName.wocEnable.visible === true && byName.wocEnable.enabled === true);
+        await sleep(450);   /* past the press dedupe of the press above */
+        byName.wocEnable.emit('action');
+        await until('the warning', () => /press Enable map again/.test(byName.wocStatus.text));
+        await sleep(450);
+        assert.strictEqual(patch.count('apply'), applies, 'an untested build needs a second press');
+        byName.wocEnable.emit('action');
+        await until('apply sent on the second press', () => patch.count('apply') === applies + 1 && !patch.busy);
+        patch.conflict = null;
+        patch.announce(state, 'high', null);
+        console.log('ok   an untested carplay build: Enable map warns, the second press applies');
+
         /* Android Auto next to CarPlay: its line, Enable, then Disable and the zoom. */
         await until('Android Auto off, Enable offered', () => byName.wocAaStatus.text === 'Android Auto: off' &&
             byName.wocAaEnable.visible === true && byName.wocAaDisable.visible === false && byName.wocAaZoomOut.visible === false);

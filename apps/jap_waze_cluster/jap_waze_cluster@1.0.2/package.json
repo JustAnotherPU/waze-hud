@@ -1,6 +1,6 @@
 {
   "name": "jap_waze_cluster",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Puts the CarPlay Waze map on the instrument cluster and Waze's turns on BMW's HUD: enable the patch from the HMI and the map follows CarPlay",
   "private": false,
   "main": "javascript/runner.js",

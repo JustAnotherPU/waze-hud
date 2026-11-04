@@ -36,14 +36,16 @@ a video pipeline:
 Install the app `jap_waze_cluster` (**Waze HUD**) from this repository's
 catalog (Store source `JustAnotherPU/waze-hud`, Releases) through the
 [mgu Store](https://github.com/robertnisipeanu/mgu-store). The app requires
-this tool (1.0.0); this tool requires `cluster-render` 0.3.7, which this
+this tool (1.1.1); this tool requires `cluster-render` 0.3.7 or later, which this
 repository does not publish (add the source `robertnisipeanu/idrive-apps`
 too, which does), and `mgu-deploy` 0.7.11, the deploy tool version that runs
 activate and deactivate hooks and puts the tool's `recmgr` and `crashNames`
 names, `aapd` among them, on the lists. Requirements resolve across catalog
 sources.
 
-**Beside robertnisipeanu's Waze on cluster.** That tool (`waze-on-cluster`)
+### Beside robertnisipeanu's Waze on cluster
+
+That tool (`waze-on-cluster`)
 and its app (`robertn_waze_cluster`) patch the same carplay and aapd, so the
 two cannot run at once. Every name this tool uses on the unit is its own
 (`/var/opt/jap-waze-on-cluster`, `/run` and `/dev/shm/jap-waze-on-cluster`,

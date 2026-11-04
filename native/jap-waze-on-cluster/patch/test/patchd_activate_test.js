@@ -189,6 +189,19 @@ function daemonStatus() {
 async function main() {
     var r, before, m, st, runningIno, patchedIno;
 
+    /* A cluster coded 9 (the stock CarPlay cluster map): a fresh install
+     * leaves carplay as it is, a conflict. */
+    var ap = require('../aapd_patch.js'), coding = Buffer.alloc(ap.CODING.size);
+    coding[ap.CODING.flags] = 0x09;
+    coding[ap.CODING.at] = (9 << ap.CODING.shift) | 0x01;
+    ENV.WOC_CODING = path.join(dir, 'rawcodingdata');
+    fs.writeFileSync(ENV.WOC_CODING, coding);
+    fresh(SRCBUF);
+    r = hook('activate');
+    ok('variant 9: activate leaves carplay, conflict, exit 0', r.code === 0 && disk() === sha(SRCBUF) && !marker() &&
+        r.result.conflict === 'not supported on this car (KI_KOMBI_VARIANT 9)', JSON.stringify(r.result));
+    delete ENV.WOC_CODING;
+
     /* A fresh install: the pristine build, no backup of ours, carplay running it. */
     fresh(SRCBUF);
     runningIno = ino(TGT);
