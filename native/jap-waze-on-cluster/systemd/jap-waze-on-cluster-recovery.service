@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Robert Nisipeanu
+[Unit]
+Description=jap-waze-on-cluster boot recovery: watch carplay and aapd and restore the original if a patch makes it crash
+RequiresMountsFor=/var/opt
+# Dormant while robertnisipeanu's waze-on-cluster is installed (patch/conflict.js).
+ConditionPathExists=!/var/opt/waze-on-cluster/current/component.json
+After=local-fs.target jap-waze-on-cluster-boot.service jap-waze-on-cluster-aa-boot.service
+
+[Service]
+# Root, like patchd: it remounts / read-write only to run a vetted,
+# reversible revert (carplay_patch.js, aapd_patch.js: verified backup), then
+# read-only again. Long-running: it records each crash of carplay and of
+# aapd the moment it sees it, each in its own counter, and restores a patch
+# at once when it cannot save that record. It marks a healthy service. Where
+# recmgr loaded a service's entry this boot, it also restores at the
+# threshold, and runs `systemctl start` of it after a crash or a SIGKILL
+# patchd did not send (bounded per boot). It never stops, kills, restarts or
+# reboots anything (PATCH.md "Boot recovery").
+ExecStart=/usr/bin/node /var/opt/jap-waze-on-cluster/current/recovery.js
+Restart=always
+RestartSec=5
+# On stop, signal only the daemon (not its mount/revert children); it exits
+# once an in-progress restore has finished, which takes at most 91 s
+# (recovery.js RESTORE_BOUND_MS), so / is never left writable.
+KillMode=mixed
+TimeoutStopSec=120
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

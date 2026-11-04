@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "1.3.0",
+  "application": {
+    "uuid": "cbd82afa-c023-4f78-8845-0d883d508dcb",
+    "type": "OnlineApp",
+    "name": "jap_waze_cluster",
+    "vendor": "JustAnotherPU",
+    "version": "1.0.0",
+    "defaultLanguage": "en_GB",
+    "uiDescriptions": [
+      {
+        "applicationFilePath": "./uiDescriptions/ID7/application.xml",
+        "uiDescriptionFilePath": "./uiDescriptions/ID7/uiDescription.json",
+        "hmi": [
+          "ID7"
+        ]
+      }
+    ],
+    "stringBundleUuid": "b4c5199d-b192-4eaf-a3e1-3020c0c6dc8f",
+    "resourceBundleUuid": "e84691c3-d37a-48fc-aae5-f90c3a8baf92",
+    "variantGroups": [
+      {
+        "stringsPath": "./variantGroups/Common/texts",
+        "resourcesPath": "./variantGroups/Common/images",
+        "hmi": [
+          "ID7"
+        ],
+        "brands": [
+          "BMW"
+        ]
+      }
+    ],
+    "entryPoints": [
+      {
+        "name": "jap_waze_cluster",
+        "uuid": "a8006f16-12f5-4cc9-a538-4b8b832cff49",
+        "textId": "SID_WOC_TITLE",
+        "icon": "jap_waze_cluster_icon.png",
+        "insertionStateId": 20974,
+        "insertionFocusId": 2,
+        "insertionMode": "INSERT_BELOW",
+        "insertionOrder": 0,
+        "insertionPriority": 0,
+        "previewType": "NONE",
+        "bookmarkable": true,
+        "private": null,
+        "appearance": "DEFAULT",
+        "isGroupHeader": false,
+        "insertionGroup": 0
+      }
+    ]
+  }
+}

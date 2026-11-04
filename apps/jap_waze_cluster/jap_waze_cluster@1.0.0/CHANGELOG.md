@@ -1,0 +1,131 @@
+# Changelog
+
+## 1.0.0
+
+Waze HUD, JustAnotherPU's app (id jap_waze_cluster) for jap-waze-on-cluster
+1.0.0: Waze's next turn on BMW's own HUD arrows. When robertnisipeanu's
+Waze on cluster is installed, a pop-up says both patch CarPlay and offers to
+remove it (or Cancel); until then this one stays off. The page also offers
+the removal (press twice). Requires jap-waze-on-cluster 1.0.0.
+
+Entries below are the history of robertn_waze_cluster, which this app is
+derived from (its tool was then named waze-on-cluster).
+
+## 0.5.0
+
+Android Auto next to CarPlay: a line with its state (patched and its
+density, off, pending, not supported on this car, untested aapd build),
+Enable Android Auto, Disable Android Auto, Zoom out and Zoom in for the
+density, and Hide turn card / Show turn card. Restart head unit also
+activates a pending Android Auto change. Requires waze-on-cluster 0.8.0.
+
+## 0.4.4
+
+Hide BMW turn box: a checkbox on the main page. Ticked (the default), BMW's
+own CarPlay turn-by-turn box on the cluster stays hidden while the Waze map
+shows; unticked, it shows. The choice takes effect at once and is kept
+across restarts and updates. While the cluster renderer keeps the box shown
+(its mapping guard), the checkbox is greyed and labelled unavailable.
+Requires waze-on-cluster 0.7.13.
+
+## 0.4.3
+
+A Logs page: Save logs saves an archive of the tools' logs, the journal
+lines they keep and their status, and a phone on the car's Wi-Fi hotspot
+downloads the saved archives from the address the page shows, as text and as
+a QR code. Requires waze-on-cluster 0.7.11.
+
+## 0.4.1
+
+While CarPlay's stream is live but shows no map, the status says why, from
+waze-on-cluster 0.7.2 on: "Stream lost — reconnect CarPlay", or "Stream
+lost — restarting CarPlay" where the tool restarts CarPlay itself.
+
+## 0.4.0
+
+The page says to set Instrument cluster > Central display area to Map view:
+the Waze map replaces the stock map while CarPlay streams it, and the stock
+map is back when the stream ends or freezes. A frozen stream shows "Map
+frozen — reconnect CarPlay". Requires waze-on-cluster 0.6.0.
+
+## 0.3.1
+
+The page says to set Instrument cluster > Central display area to Off: with
+Map view, Route preview or Assisted Driving View there, the cluster shows its
+own content in the centre instead of the map.
+
+## 0.3.0
+
+Installing the app from the Store installs the Waze tool and the cluster
+renderer too. The tool writes the CarPlay patch as it installs, without
+restarting CarPlay; until the next head-unit start the app shows "Patch
+pending — reboot to activate". Enable map appears only when the patch is
+off, unknown or out of date, Disable map only when it is on. When the install
+leaves CarPlay unpatched (an unknown CarPlay build, or another tool starting
+CarPlay), the app says why and offers Enable map. The Store can remove the
+app and then the Waze tool, which restores CarPlay.
+
+## 0.2.11
+
+When a patch change waits for the next head-unit start, the app says so and
+offers a Restart head unit button. A boot recovery service restores the
+original CarPlay binary after repeated failed starts with the patch.
+
+## 0.2.10
+
+The map appears on the cluster by itself when CarPlay streams it and goes
+away when the stream stops; there is no Show or Stop button. Disable map
+turns the feature off.
+
+## 0.2.9
+
+Enable map sets the area where the phone places its guidance, so Waze's
+next-turn banner stays visible between the gauges. Units patched with a
+full-frame area are prompted to update.
+
+## 0.2.8
+
+The map is drawn in the cluster's native map area (1088x480), under the
+gauges. Units patched at another size are prompted to Enable map again.
+
+## 0.2.7
+
+Enable map applies a single patch configuration, including the size the
+phone renders the map at. Units on another panel setting are prompted to
+update.
+
+## 0.2.6
+
+Enable map uses a single capture path; the capture mode row is removed.
+Capture logs has its own button.
+
+## 0.2.5
+
+The status line reads "Patch state unknown — enable the map" until the patch
+daemon reports, so the page opens cleanly.
+
+## 0.2.4
+
+After Enable map, the cluster stream starts with the CarPlay session. A patch
+waiting for the next head-unit start reads "Patch pending — …".
+
+## 0.2.3
+
+The diagnostic capture window is up to 5 minutes.
+
+## 0.2.2
+
+Capture mode offers a UDP stream sink.
+
+## 0.2.1
+
+Capture logs: a bounded DLT capture, with its status and an early stop.
+
+## 0.2.0
+
+A capture mode choice for Enable map.
+
+## 0.1.0
+
+First release: a page to apply and revert the CarPlay patch, show and stop
+the map on the cluster, and read both tools' logs.

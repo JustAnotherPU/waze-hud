@@ -1,0 +1,133 @@
+waze-hud, by JustAnotherPU (2026-11)
+
+This is a modified version of idrive-apps
+(https://github.com/robertnisipeanu/idrive-apps, upstream commit 3a2cde0,
+2026-11), licensed under the GNU General Public License version 3 or later
+(LICENSE). It was modified in November 2026 by JustAnotherPU. Files keep
+their original copyright and license headers; files JustAnotherPU added
+carry their own.
+
+This file is the prominent notice required by section 5(a) of the GNU GPL
+version 3: JustAnotherPU modified the 95 files listed below (24 added, 71
+changed), dated 2026-11-04.
+
+What changed, in short:
+
+- Waze's next turn and distance on BMW's own HUD arrows: a native HUD
+  backend (hudguide, ProjectedModeGuiding, the default) and an optional
+  drawn-image backend, with the readers for the CarPlay card and the Waze
+  cluster map.
+- Its own ids and on-unit names, so it installs beside the original:
+  waze-on-cluster -> jap-waze-on-cluster (tool, units, drop-ins, paths under
+  /var/opt, /run and /dev/shm, the local.conf, backups *.jap-orig),
+  robertn_waze_cluster -> jap_waze_cluster (app, new RHMI UUIDs, title
+  "Waze HUD").
+- A guard against the original Waze on cluster (patch/conflict.js): dormant
+  while it is installed, a pop-up in the app to remove it or cancel.
+- cluster-render is kept unmodified, to build against only; it is not
+  published from here.
+
+Files added:
+  native/jap-waze-on-cluster/patch/conflict.js
+  native/jap-waze-on-cluster/patch/hudguide.js
+  native/jap-waze-on-cluster/patch/pmg_schema.js
+  native/jap-waze-on-cluster/patch/test/conflict_test.js
+  native/jap-waze-on-cluster/patch/test/hudguide_test.js
+  native/jap-waze-on-cluster/src/hud_arrows.cpp
+  native/jap-waze-on-cluster/src/hud_arrows.h
+  native/jap-waze-on-cluster/src/hud_banner.cpp
+  native/jap-waze-on-cluster/src/hud_banner.h
+  native/jap-waze-on-cluster/src/hud_draw.cpp
+  native/jap-waze-on-cluster/src/hud_draw.h
+  native/jap-waze-on-cluster/src/hud_maparrow.cpp
+  native/jap-waze-on-cluster/src/hud_maparrow.h
+  native/jap-waze-on-cluster/src/screen_grab.cpp
+  native/jap-waze-on-cluster/src/screen_grab.h
+  native/jap-waze-on-cluster/systemd/jap-waze-on-cluster-hudguide.service
+  native/jap-waze-on-cluster/test/data/carplay-card-30m.pgm
+  native/jap-waze-on-cluster/test/data/waze-map-right.pgm
+  native/jap-waze-on-cluster/test/hud_banner_test.cpp
+  native/jap-waze-on-cluster/test/hud_feed_test.cpp
+  native/jap-waze-on-cluster/test/hud_maparrow_test.cpp
+  native/jap-waze-on-cluster/tools/hud_font_templates.py
+  native/jap-waze-on-cluster/tools/hud_templates.py
+  release/repo.json
+
+Files modified (old path -> new path where moved):
+  .github/workflows/test.yml
+  README.md
+  apps/robertn_waze_cluster/README.md -> apps/jap_waze_cluster/README.md
+  apps/robertn_waze_cluster/mgu-app.json -> apps/jap_waze_cluster/mgu-app.json
+  apps/robertn_waze_cluster/release.json -> apps/jap_waze_cluster/release.json
+  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/CHANGELOG.md -> apps/jap_waze_cluster/jap_waze_cluster@1.0.0/CHANGELOG.md
+  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/npm-shrinkwrap.json -> apps/jap_waze_cluster/jap_waze_cluster@1.0.0/npm-shrinkwrap.json
+  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/package.json -> apps/jap_waze_cluster/jap_waze_cluster@1.0.0/package.json
+  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/rhmiData/application.json -> apps/jap_waze_cluster/jap_waze_cluster@1.0.0/rhmiData/application.json
+  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/rhmiData/uiDescriptions/ID7/application.xml -> apps/jap_waze_cluster/jap_waze_cluster@1.0.0/rhmiData/uiDescriptions/ID7/application.xml
+  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/rhmiData/uiDescriptions/ID7/uiDescription.json -> apps/jap_waze_cluster/jap_waze_cluster@1.0.0/rhmiData/uiDescriptions/ID7/uiDescription.json
+  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/rhmiData/variantGroups/Common/texts/en_GB.json -> apps/jap_waze_cluster/jap_waze_cluster@1.0.0/rhmiData/variantGroups/Common/texts/en_GB.json
+  apps/robertn_waze_cluster/src/logs_control.js -> apps/jap_waze_cluster/src/logs_control.js
+  apps/robertn_waze_cluster/src/robertn_waze_cluster.js -> apps/jap_waze_cluster/src/jap_waze_cluster.js
+  apps/robertn_waze_cluster/src/waze_cluster_control.js -> apps/jap_waze_cluster/src/waze_cluster_control.js
+  apps/robertn_waze_cluster/tools/build.js -> apps/jap_waze_cluster/tools/build.js
+  apps/robertn_waze_cluster/tools/fakes.js -> apps/jap_waze_cluster/tools/fakes.js
+  apps/robertn_waze_cluster/tools/test_control.js -> apps/jap_waze_cluster/tools/test_control.js
+  apps/robertn_waze_cluster/tools/test_page.js -> apps/jap_waze_cluster/tools/test_page.js
+  native/waze-on-cluster/Makefile -> native/jap-waze-on-cluster/Makefile
+  native/waze-on-cluster/README.md -> native/jap-waze-on-cluster/README.md
+  native/waze-on-cluster/component.json -> native/jap-waze-on-cluster/component.json
+  native/waze-on-cluster/patch/PATCH.md -> native/jap-waze-on-cluster/patch/PATCH.md
+  native/waze-on-cluster/patch/aapd_conf.js -> native/jap-waze-on-cluster/patch/aapd_conf.js
+  native/waze-on-cluster/patch/aapd_patch.js -> native/jap-waze-on-cluster/patch/aapd_patch.js
+  native/waze-on-cluster/patch/carplay_patch.js -> native/jap-waze-on-cluster/patch/carplay_patch.js
+  native/waze-on-cluster/patch/dlt_capture.js -> native/jap-waze-on-cluster/patch/dlt_capture.js
+  native/waze-on-cluster/patch/journal_keep.js -> native/jap-waze-on-cluster/patch/journal_keep.js
+  native/waze-on-cluster/patch/logs.js -> native/jap-waze-on-cluster/patch/logs.js
+  native/waze-on-cluster/patch/logs_fw.js -> native/jap-waze-on-cluster/patch/logs_fw.js
+  native/waze-on-cluster/patch/patchd.js -> native/jap-waze-on-cluster/patch/patchd.js
+  native/waze-on-cluster/patch/recovery.js -> native/jap-waze-on-cluster/patch/recovery.js
+  native/waze-on-cluster/patch/remount_lock.js -> native/jap-waze-on-cluster/patch/remount_lock.js
+  native/waze-on-cluster/patch/shutdown_mark.sh -> native/jap-waze-on-cluster/patch/shutdown_mark.sh
+  native/waze-on-cluster/patch/test/aapd_test.js -> native/jap-waze-on-cluster/patch/test/aapd_test.js
+  native/waze-on-cluster/patch/test/firmware/capture_test.js -> native/jap-waze-on-cluster/patch/test/firmware/capture_test.js
+  native/waze-on-cluster/patch/test/journal_keep_test.js -> native/jap-waze-on-cluster/patch/test/journal_keep_test.js
+  native/waze-on-cluster/patch/test/locate_test.js -> native/jap-waze-on-cluster/patch/test/locate_test.js
+  native/waze-on-cluster/patch/test/logs_fw_test.js -> native/jap-waze-on-cluster/patch/test/logs_fw_test.js
+  native/waze-on-cluster/patch/test/patch_test.js -> native/jap-waze-on-cluster/patch/test/patch_test.js
+  native/waze-on-cluster/patch/test/patchd_activate_test.js -> native/jap-waze-on-cluster/patch/test/patchd_activate_test.js
+  native/waze-on-cluster/patch/test/patchd_patch_test.js -> native/jap-waze-on-cluster/patch/test/patchd_patch_test.js
+  native/waze-on-cluster/patch/test/recovery_test.js -> native/jap-waze-on-cluster/patch/test/recovery_test.js
+  native/waze-on-cluster/patch/test/undo_test.js -> native/jap-waze-on-cluster/patch/test/undo_test.js
+  native/waze-on-cluster/patch/test/units_test.js -> native/jap-waze-on-cluster/patch/test/units_test.js
+  native/waze-on-cluster/patch/woc-patch.sh -> native/jap-waze-on-cluster/patch/woc-patch.sh
+  native/waze-on-cluster/src/control.h -> native/jap-waze-on-cluster/src/control.h
+  native/waze-on-cluster/src/framing_probe.cpp -> native/jap-waze-on-cluster/src/framing_probe.cpp
+  native/waze-on-cluster/src/main.cpp -> native/jap-waze-on-cluster/src/main.cpp
+  native/waze-on-cluster/src/map_feed.cpp -> native/jap-waze-on-cluster/src/map_feed.cpp
+  native/waze-on-cluster/src/map_feed.h -> native/jap-waze-on-cluster/src/map_feed.h
+  native/waze-on-cluster/systemd/carplay.service.d/50-waze-on-cluster.conf -> native/jap-waze-on-cluster/systemd/carplay.service.d/50-jap-waze-on-cluster.conf
+  native/waze-on-cluster/systemd/var-opt-ro.service.d/50-waze-on-cluster.conf -> native/jap-waze-on-cluster/systemd/var-opt-ro.service.d/50-jap-waze-on-cluster.conf
+  native/waze-on-cluster/systemd/waze-on-cluster-aa-boot.service -> native/jap-waze-on-cluster/systemd/jap-waze-on-cluster-aa-boot.service
+  native/waze-on-cluster/systemd/waze-on-cluster-boot.service -> native/jap-waze-on-cluster/systemd/jap-waze-on-cluster-boot.service
+  native/waze-on-cluster/systemd/waze-on-cluster-capture.service -> native/jap-waze-on-cluster/systemd/jap-waze-on-cluster-capture.service
+  native/waze-on-cluster/systemd/waze-on-cluster-journal.service -> native/jap-waze-on-cluster/systemd/jap-waze-on-cluster-journal.service
+  native/waze-on-cluster/systemd/waze-on-cluster-journal.timer -> native/jap-waze-on-cluster/systemd/jap-waze-on-cluster-journal.timer
+  native/waze-on-cluster/systemd/waze-on-cluster-logs-fw.service -> native/jap-waze-on-cluster/systemd/jap-waze-on-cluster-logs-fw.service
+  native/waze-on-cluster/systemd/waze-on-cluster-logs.service -> native/jap-waze-on-cluster/systemd/jap-waze-on-cluster-logs.service
+  native/waze-on-cluster/systemd/waze-on-cluster-logs.socket -> native/jap-waze-on-cluster/systemd/jap-waze-on-cluster-logs.socket
+  native/waze-on-cluster/systemd/waze-on-cluster-patchd.service -> native/jap-waze-on-cluster/systemd/jap-waze-on-cluster-patchd.service
+  native/waze-on-cluster/systemd/waze-on-cluster-recovery.service -> native/jap-waze-on-cluster/systemd/jap-waze-on-cluster-recovery.service
+  native/waze-on-cluster/systemd/waze-on-cluster.service -> native/jap-waze-on-cluster/systemd/jap-waze-on-cluster.service
+  native/waze-on-cluster/systemd/waze-on-cluster.socket -> native/jap-waze-on-cluster/systemd/jap-waze-on-cluster.socket
+  native/waze-on-cluster/test/guide_setting_test.cpp -> native/jap-waze-on-cluster/test/guide_setting_test.cpp
+  native/waze-on-cluster/tools/collect-logs.sh -> native/jap-waze-on-cluster/tools/collect-logs.sh
+  native/waze-on-cluster/waze-on-cluster.conf -> native/jap-waze-on-cluster/jap-waze-on-cluster.conf
+  release/README.md
+  release/release.js
+  release/test/release_test.js
+
+Files only moved, content unchanged: the rest of native/waze-on-cluster/
+(now native/jap-waze-on-cluster/) and apps/robertn_waze_cluster/ (now
+apps/jap_waze_cluster/), among them the app icon
+  apps/robertn_waze_cluster/robertn_waze_cluster@0.5.0/rhmiData/variantGroups/Common/images/robertn_waze_cluster_icon.png
+  -> apps/jap_waze_cluster/jap_waze_cluster@1.0.0/rhmiData/variantGroups/Common/images/jap_waze_cluster_icon.png

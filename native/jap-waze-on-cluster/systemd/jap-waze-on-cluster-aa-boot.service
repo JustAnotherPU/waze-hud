@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Robert Nisipeanu
+[Unit]
+Description=jap-waze-on-cluster boot check: restore the original aapd before it starts if the Android Auto patch crash-loops
+RequiresMountsFor=/var/opt
+# Runs even while robertnisipeanu's waze-on-cluster is installed: it acts only
+# on a patch of ours (our own .jap-orig backups), never on the other one's.
+After=local-fs.target
+# aapd.service (WantedBy=late.target, after multi-user.target) starts only
+# once this has finished, failed or timed out; it does not require it.
+Before=aapd.service
+
+[Service]
+# As jap-waze-on-cluster-boot.service does for carplay: at the crash threshold,
+# or when it cannot save this boot's record, it remounts / read-write only to
+# run the vetted aapd_patch.js revert of a restorable patch, then read-only
+# again (PATCH.md "Boot recovery"). Otherwise it counts the previous boot,
+# arms this one and exits in about a second.
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=-/usr/bin/node /var/opt/jap-waze-on-cluster/current/recovery.js boot aapd
+# Every command a restore runs is bounded, so it ends within 111 s
+# (recovery.js BOOT_BOUND_MS: up to 20 s for the other boot step's restore,
+# then RESTORE_BOUND_MS), inside the start timeout. A stop
+# mid-restore lets it finish, inside the stop timeout, so / is not left
+# writable; KillMode=mixed signals only the step, not its mount/revert
+# children.
+TimeoutStartSec=120
+TimeoutStopSec=120
+KillMode=mixed
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
