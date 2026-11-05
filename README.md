@@ -11,6 +11,19 @@ CarPlay sends Apple Maps' and Google Maps' guidance: **BMW's own HUD arrows
 and distance, for Waze**. The CarPlay (or Android Auto) map is shown on the
 instrument cluster as well.
 
+![How it works: the iPhone runs Waze over CarPlay; on the head unit, the patched carplay program sends the cluster map, which jap-waze-on-cluster decodes and cluster-render draws on the instrument cluster, while Waze's turn card is read from the CarPlay screen and hudguide passes it to BMW's navigation for the HUD](docs/media/how-it-works.svg)
+
+*How it works: the map goes to the instrument cluster as video; the next turn
+is read from the CarPlay screen and handed to BMW's own HUD.*
+
+![Waze's turn card, a right turn in 30 m, next to the HUD arrow and distance drawn from it](docs/media/hud-arrow.png)
+
+*Left, Waze's turn card as captured on the car (the test image the reader is
+checked against). Right, the arrow drawn from it by the optional `image`
+backend, rendered offline with
+[`hud_draw.cpp`](native/jap-waze-on-cluster/src/hud_draw.cpp); the default `native`
+backend shows BMW's own arrow and distance instead. Not a photo of the HUD.*
+
 > **Use at your own risk.** This project patches programs on your car's head
 > unit. It is not affiliated with or endorsed by BMW AG, Apple, Google or
 > Waze; their names are used only to say what it works with. It may affect
