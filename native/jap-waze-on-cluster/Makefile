@@ -49,7 +49,7 @@ VERSION := $(shell sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' component.json)
 WOC_SRC = src/main.cpp src/video_producer.cpp src/freeze_watch.cpp src/alt_screen.cpp src/map_feed.cpp src/control.cpp src/h264_source.cpp \
           src/guide_setting.cpp \
           src/udp_source.cpp src/avb_source.cpp src/framing_probe.cpp src/rtp_h264.cpp \
-          src/decoder_msdk.cpp src/nal_reader.cpp src/stream_health.cpp src/hud_draw.cpp src/hud_banner.cpp src/hud_maparrow.cpp src/screen_grab.cpp src/hud_arrows.cpp \
+          src/decoder_msdk.cpp src/nal_reader.cpp src/stream_health.cpp src/hud_draw.cpp src/hud_banner.cpp src/hud_maparrow.cpp src/hud_route.cpp src/screen_grab.cpp src/hud_arrows.cpp \
           $(KIT)/map_geometry.cpp $(KIT)/yuv_atlas.cpp \
           $(KIT)/block_pack.cpp
 CR_SRC  = $(CR)/client/client.cpp $(CR)/client/protocol.cpp
@@ -62,7 +62,8 @@ CPP_TESTS = $(BUILD)/host/nal_reader_test $(BUILD)/host/rtp_h264_test $(BUILD)/h
 		$(BUILD)/host/alt_screen_test $(BUILD)/host/packet_queue_test $(BUILD)/host/backlog_test \
 		$(BUILD)/host/stream_health_test $(BUILD)/host/source_crop_test \
 		$(BUILD)/host/map_rect_test $(BUILD)/host/guide_setting_test \
-		$(BUILD)/host/hud_banner_test $(BUILD)/host/hud_feed_test $(BUILD)/host/hud_maparrow_test
+		$(BUILD)/host/hud_banner_test $(BUILD)/host/hud_feed_test $(BUILD)/host/hud_maparrow_test \
+		$(BUILD)/host/hud_route_test $(BUILD)/host/send_gate_test
 
 all: test
 
@@ -84,6 +85,7 @@ test-node:
 	$(NODE) patch/test/patchd_activate_test.js
 	$(NODE) patch/test/patchd_dlt_test.js
 	$(NODE) patch/test/dlt_capture_test.js
+	$(NODE) patch/test/speedd_test.js
 	$(NODE) patch/test/recovery_test.js
 	$(NODE) patch/test/journal_keep_test.js
 	$(NODE) patch/test/logs_test.js
@@ -110,7 +112,10 @@ test-cpp: $(CPP_TESTS)
 	$(BUILD)/host/hud_banner_test
 	$(BUILD)/host/hud_feed_test
 	$(BUILD)/host/hud_maparrow_test
+	$(BUILD)/host/hud_route_test
+	$(BUILD)/host/send_gate_test
 	$(PYTHON) tools/hud_templates.py --self-test
+	$(PYTHON) tools/route_calibrate.py --self-test
 	$(MAKE) -C $(CR) test-kit BUILD=$(abspath $(BUILD))/kit
 
 test-x86:
@@ -191,6 +196,10 @@ $(BUILD)/host/packet_queue_test: test/packet_queue_test.cpp src/packet_queue.h
 	mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) -Isrc -o $@ test/packet_queue_test.cpp -lpthread
 
+$(BUILD)/host/send_gate_test: test/send_gate_test.cpp src/send_gate.h
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -Isrc -o $@ test/send_gate_test.cpp
+
 $(BUILD)/host/backlog_test: test/backlog_test.cpp src/backlog.h $(KIT)/frame_clock.h
 	mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) -Isrc -I$(KIT) -o $@ test/backlog_test.cpp
@@ -206,16 +215,19 @@ HUD_SRC = src/hud_draw.cpp src/hud_banner.cpp
 $(BUILD)/host/hud_maparrow_test: test/hud_maparrow_test.cpp src/hud_maparrow.cpp src/hud_maparrow.h $(HUD_SRC) src/hud_draw.h src/hud_banner.h
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -Isrc -o $@ test/hud_maparrow_test.cpp src/hud_maparrow.cpp $(HUD_SRC)
+$(BUILD)/host/hud_route_test: test/hud_route_test.cpp src/hud_route.cpp src/hud_route.h src/hud_maparrow.h src/hud_banner.h
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -Isrc -o $@ test/hud_route_test.cpp src/hud_route.cpp
 $(BUILD)/host/hud_banner_test: test/hud_banner_test.cpp $(HUD_SRC) src/hud_draw.h src/hud_banner.h
 	mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) -Isrc -o $@ test/hud_banner_test.cpp $(HUD_SRC)
 
 # The HUD arrows next to the map feed, on one shared renderer (as map_feed_test).
-$(BUILD)/host/hud_feed_test: test/hud_feed_test.cpp src/hud_arrows.cpp src/hud_arrows.h src/hud_maparrow.cpp src/screen_grab.cpp $(HUD_SRC) src/map_feed.cpp \
+$(BUILD)/host/hud_feed_test: test/hud_feed_test.cpp src/hud_arrows.cpp src/hud_arrows.h src/hud_maparrow.cpp src/hud_route.cpp src/hud_route.h src/screen_grab.cpp $(HUD_SRC) src/map_feed.cpp \
 		src/map_feed.h $(CR_CORE) $(CR_SRC) $(CR)/src/log.cpp $(wildcard $(CR)/src/*.h $(CR)/include/cluster_render/*.h $(CR)/test/*.h)
 	mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) -Isrc -I$(KIT) -I$(CR)/include -I$(CR) -I$(CR)/src -isystem $(CR)/dcsm/third_party/vsomeip/interface \
-		-o $@ test/hud_feed_test.cpp src/hud_arrows.cpp src/hud_maparrow.cpp src/screen_grab.cpp $(HUD_SRC) src/map_feed.cpp \
+		-o $@ test/hud_feed_test.cpp src/hud_arrows.cpp src/hud_maparrow.cpp src/hud_route.cpp src/screen_grab.cpp $(HUD_SRC) src/map_feed.cpp \
 		$(filter-out $(CR)/client/protocol.cpp,$(CR_CORE)) $(CR_SRC) $(CR)/src/log.cpp -lpthread
 
 # ---- target binary (in Docker) --------------------------------------------

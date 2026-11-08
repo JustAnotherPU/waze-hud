@@ -13,12 +13,19 @@
  *   whose glyphs do not match its text is reported;
  * - the PNG dump is a valid PNG; the debounce reports a reading only once
  *   it is stable and changed;
+ * - the street set (str-<hex>-<n>.pgm, our stroke glyphs labelled as other
+ *   characters): UTF-8 labels whole, a space at a wide gap, iOS's trailing
+ *   ellipsis left out, an unknown glyph no street; kept apart from the
+ *   distance's; with HUD_FONT_TPL, the SF Pro sets made by
+ *   tools/hud_font_templates.py load apart;
+ * - the street hold: twice the same to show, kept, gone with the manoeuvre;
  * - the HUD image is drawn for every manoeuvre, transparent when empty;
  * - the cost of one read, for the CPU estimate. */
 #include <sys/stat.h>
 #include <unistd.h>
 
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -203,6 +210,111 @@ int main()
     ok("hold: another turn does not take the distance", hold.pick(r2, true, 7300) == r2);
     ok("hold: no card and no map: the card's within 3 s", hold.pick(Reading(), false, 8000) == r2 &&
                                                               hold.pick(Reading(), false, 10400).maneuver.empty());
+
+    {
+        /* The street set: the H a filled box as tall as a digit, then our
+         * stroke glyph standing for another character. */
+        const std::string sdir = "/tmp/jap-woc-hud-str-test-" + std::to_string(getpid());
+        mkdir(sdir.c_str(), 0755);
+        auto save = [&](const std::string &name, const Gray &img) {
+            FILE *o = std::fopen((sdir + "/" + name).c_str(), "wb");
+            std::fprintf(o, "P5\n%u %u\n255\n", img.w, img.h);
+            std::fwrite(img.px.data(), 1, img.px.size(), o);
+            std::fclose(o);
+        };
+        const struct { const char *glyph, *hex; } map[] = {{"1", "u00e9"}, {"m", "u00df"}, {"k", "u0061"}, {"7", "u0152"}};
+        for (const auto &m : map) {
+            Gray img(120, 60);
+            for (unsigned y = 12; y < 44; y++)
+                for (unsigned x = 8; x < 30; x++) img.px[y * img.w + x] = 255;
+            draw_text(&img, m.glyph, 50, 12, 32);
+            save(std::string("str-") + m.hex + "-1.pgm", img);
+        }
+        Gray dl(160, 60);
+        draw_text(&dl, "1m", 8, 12, 32);
+        save("dist-1m-1.pgm", dl);
+        Templates st, dt;
+        std::string slog;
+        ok("street set: only the str- files, the H the height reference",
+           st.load_dir(sdir, &slog, "str") == 4 && st.glyphs() == 4 && std::fabs(st.ref_h() - 32) < 1.5f && slog.empty());
+        ok("distance set beside it: only the dist- file, no letters",
+           dt.load_dir(sdir, &slog) == 1 && dt.glyphs() == 2 && dt.ref_h() == 0 && slog.empty());
+        /* a line: "1m", a word gap, "k7", then three low dots (iOS's cut) */
+        Gray line(400, 60);
+        float x = 10 + draw_text(&line, "1m", 10, 12, 32);
+        x += 16 + draw_text(&line, "k7", x + 16, 12, 32);
+        for (int i = 0; i < 3; i++)
+            for (unsigned yy = 40; yy < 44; yy++)
+                for (unsigned xx = 0; xx < 4; xx++) line.px[yy * line.w + (unsigned)x + 4 + i * 8 + xx] = 255;
+        Recogniser sr(&st, Rect{}, Rect{});
+        const std::string words = sr.read_words(line, 0.7f);
+        std::printf("     street line read \"%s\"\n", words.c_str());
+        ok("street: UTF-8 labels whole, a space at the gap, the ellipsis left out",
+           words == "\xc3\xa9\xc3\x9f a\xc5\x92");
+        Gray odd(200, 60);
+        draw_text(&odd, "1f", 10, 12, 32);
+        ok("street: a glyph not in the set: no street", sr.read_words(odd, 0.7f).empty());
+        ok("street: no street set: none", Recogniser(nullptr, Rect{}, Rect{}).read_words(line, 0.7f).empty());
+        Templates u;
+        ok("a UTF-8 line counts characters, not bytes", u.add_line("\xc3\xa9\xc3\x9f", dl) && u.glyphs() == 2);
+        ok("and reads them back whole", Recogniser(&u, Rect{}, Rect{}).read_text(dl) == "\xc3\xa9\xc3\x9f");
+        ok("cleaned up", std::system(("rm -rf " + sdir).c_str()) == 0);
+
+        if (const char *fd = std::getenv("HUD_FONT_TPL")) {
+            Templates fs, fdst;
+            std::string flog;
+            fs.load_dir(fd, &flog, "str");
+            fdst.load_dir(fd, &flog);
+            bool letters = false;
+            for (const Templates::T &t : fdst.glyph_set()) letters = letters || std::string("0123456789mkfti").find(t.label) == std::string::npos;
+            std::printf("     SF Pro: %zu street glyphs, H %.1f px; %zu distance glyphs\n", fs.glyphs(), fs.ref_h(), fdst.glyphs());
+            ok("SF Pro sets: the street's every character, the distance's no letter of it",
+               fs.glyphs() >= 120 && fs.ref_h() > 20 && !letters && flog.empty());
+        } else {
+            std::printf("skip SF Pro sets: HUD_FONT_TPL not set\n");
+        }
+    }
+
+    StreetHold sh;
+    Reading s1;
+    s1.maneuver = "right";
+    s1.street = "Kerkstraat";
+    Reading miss = s1;
+    miss.street.clear();
+    sh.push(s1);
+    ok("street hold: once is not enough", sh.street().empty());
+    sh.push(miss);
+    sh.push(s1);
+    ok("street hold: twice, an unreadable read between, shows", sh.street() == "Kerkstraat");
+    Reading s2 = s1;
+    s2.street = "Kerkstrat";
+    sh.push(s2);
+    sh.push(miss);
+    ok("street hold: a misread once and a miss keep it", sh.street() == "Kerkstraat");
+    sh.push(s2);
+    ok("street hold: a new name read twice replaces it", sh.street() == "Kerkstrat");
+    Reading l = s1;
+    l.maneuver = "left";
+    sh.push(l);
+    ok("street hold: another manoeuvre clears it", sh.street().empty());
+    sh.push(l);
+    sh.push(Reading());
+    ok("street hold: no card clears it", sh.street().empty());
+    Reading sd = s1;
+    sd.distance = "80 m";
+    sh.push(sd);
+    sh.push(sd);
+    sd.distance.clear();
+    sh.push(sd);
+    sd.distance = "100 m";
+    sh.push(sd);
+    ok("street hold: a read without distance, then 20 m up, keep it", sh.street() == "Kerkstraat");
+    sd.distance = "0.4 km";
+    sd.street.clear();
+    sh.push(sd);
+    ok("street hold: the distance up by over 30 m (the next one, same kind) clears it", sh.street().empty());
+    ok("distance_metres", distance_metres("1.2 km") == 1200 && distance_metres("300 m") == 300 &&
+                              distance_metres("") < 0 && std::fabs(distance_metres("0.5 mi") - 804.672) < 1e-6);
 
     std::vector<uint8_t> img;
     bool drawn = true;

@@ -62,6 +62,7 @@
 #include "keyframe_wait.h"
 #include "packet_queue.h"
 #include "rtp_h264.h"
+#include "send_gate.h"
 #include "stream_health.h"
 #include "udp_source.h"
 
@@ -98,8 +99,15 @@ public:
     ~VideoProducer();
 
     /* The newest decoded frame not yet taken, swapped into *frame (its
-     * buffer comes back for the next one); false when there is none. */
-    bool take(std::vector<uint8_t> *frame, uint64_t *id);
+     * buffer comes back for the next one); false when there is none.
+     * *changed: whether its picture changed from the one before
+     * (ChangeSampler), when given. */
+    bool take(std::vector<uint8_t> *frame, uint64_t *id, bool *changed = nullptr);
+    /* At most one picture per interval_ms (send_gate.h); 0: every frame.
+     * Main thread; the decode thread reads it. */
+    void set_picture_interval_ms(int64_t interval_ms) { picture_interval_ms_ = interval_ms; }
+    /* Frames decoded without a picture by that interval, so far. */
+    uint64_t throttled() const { return throttled_.load(); }
     /* Every decoded frame the same blank picture while they keep coming,
      * after the stream showed a picture (freeze_watch.h). */
     bool frozen(int64_t now_ms) const;
@@ -188,6 +196,10 @@ private:
     bool decoding_ = false;          /* the decoder held a sequence after the last feed */
     const PacketQueue::Packet *packet_ = nullptr;   /* the datagram being depacketised */
     GapSettler gaps_;
+    PictureGate picture_gate_;       /* decode_mutex_ */
+    bool throttling_ = false;        /* this decode() call's frames are held back by the gate (decode_mutex_) */
+    std::atomic<int64_t> picture_interval_ms_{0};
+    std::atomic<uint64_t> throttled_{0};   /* frames decoded without a picture by the gate */
     int64_t raw_retry_ms_ = 0;       /* a raw feed's next decoder start attempt */
     int64_t source_retry_ms_ = 0;    /* retry_sources' next attempt */
 
@@ -199,6 +211,7 @@ private:
     int ready_[2] = {-1, -1};        /* a byte written when back_ gets a frame not yet taken */
     uint32_t back_w_ = 0, back_h_ = 0;
     uint64_t back_id_ = 0;           /* its number in the decoder's lifetime */
+    bool back_changed_ = false;      /* its picture changed from the one before */
     Spread round_us_;                /* rounding's cost on the source thread (frame_mutex_) */
     ChangeSampler change_;           /* source thread */
     FreezeWatch freeze_;             /* frame_mutex_ */

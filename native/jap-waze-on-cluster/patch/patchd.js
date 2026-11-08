@@ -44,12 +44,16 @@
  *                  {"cmd":"capture-start"|"capture-stop"|"capture-status"}
  *                                   (capture-reply to the asker; every client gets
  *                                   ev capture, also once a second)
- *   patchd -> app  {"ev":"status","state":...,"panel":...,"mode":...,"res":...,"safe":...,"reason":...,"carplay":...,
+ *   patchd -> app  {"ev":"status","state":...,"panel":...,"mode":...,"res":...,"safe":...,"fps":...,"reason":...,"carplay":...,
  *                   "pending":...,"conflict":...}
  *                    state: original | patched | unknown | busy | error
  *                    mode (when patched): fifo | udp | avb
  *                    res, safe (when the IC_HIGH geometry is patched): the
  *                    advertised size "WxH" and its safe area "WxH+X+Y", else null
+ *                    fps (when the cluster display's frame rate is patched):
+ *                    the rate it asks the phone for, else null (stock; a patch
+ *                    from before the fps edit is still patched, and activate
+ *                    or Enable map adds it)
  *                    carplay (after an apply/revert that changed the binary):
  *                    restarted | deferred (takes effect at the next head-unit
  *                    start; state is unknown with that reason until then)
@@ -238,7 +242,7 @@ function groupId(name) {
     return -1;
 }
 
-var cachedState = { state: 'unknown', panel: null, mode: null, res: null, safe: null };   /* last good readState */
+var cachedState = { state: 'unknown', panel: null, mode: null, res: null, safe: null, fps: null };   /* last good readState */
 
 /* Why the patch should not be written without the user asking, or null: a
  * unit that starts another program than its binary (another tool's drop-in,
@@ -310,6 +314,7 @@ function readState(cb) {
         var resMatch = /res:\s+PATCHED \(IC_HIGH advertises (\d+x\d+)/.exec(text);
         var safeMatch = /res:\s+PATCHED \(IC_HIGH advertises [^,\n]*, safe (\d+x\d+) at (\d+),(\d+)\)/.exec(text);
         var resOriginal = /res:\s+ORIGINAL/.test(text);
+        var fpsMatch = /fps:\s+FPS (\d+)/.exec(text);
         var known = /known:\s+NO/.test(text) ? false : true;
         var unknownWhy = /known:\s+NO — (.*)/.exec(text);
         var pristine = /known:\s+yes, pristine/.test(text);
@@ -366,7 +371,7 @@ function readState(cb) {
         var carplay = null, binary = state;
         var pending = readPending(CP);
         if (pending) { state = 'unknown'; mode = null; reason = pending.reason; carplay = 'deferred'; }
-        cachedState = { state: state, panel: variant ? variant[1].toLowerCase() : null, mode: mode, res: res, safe: safe, reason: reason, carplay: carplay,
+        cachedState = { state: state, panel: variant ? variant[1].toLowerCase() : null, mode: mode, res: res, safe: safe, fps: fpsMatch ? +fpsMatch[1] : null, reason: reason, carplay: carplay,
                         pending: pending ? pending.action || 'apply' : null, pendingBy: pending ? pending.by : null,
                         conflict: conflict, binary: binary, known: known, backup: hasBackup, restorable: restorable };
         cb(cachedState);
@@ -454,7 +459,7 @@ function status(extra, aaExtra) {
     readState(function (st) {
         readAaState(function (aa) {
             var cpBusy = busy === 'carplay';
-            var msg = { ev: 'status', state: cpBusy ? 'busy' : st.state, panel: st.panel, mode: st.mode, res: st.res, safe: st.safe };
+            var msg = { ev: 'status', state: cpBusy ? 'busy' : st.state, panel: st.panel, mode: st.mode, res: st.res, safe: st.safe, fps: st.fps };
             if (!cpBusy && st.reason) msg.reason = st.reason;
             if (!cpBusy && st.carplay) msg.carplay = st.carplay;
             if (!cpBusy && st.pending) msg.pending = st.pending;
@@ -1100,7 +1105,7 @@ function handle(line, sock) {
             dlt.window = capture;
             readState(function (st) {
                 readAaState(function (aa) {
-                    reply(sock, { ev: 'logs', now: Date.now(), patch: st.state, panel: st.panel, mode: st.mode, res: st.res, safe: st.safe,
+                    reply(sock, { ev: 'logs', now: Date.now(), patch: st.state, panel: st.panel, mode: st.mode, res: st.res, safe: st.safe, fps: st.fps,
                                   aa: aaMsg(aa), carplay: carplayLines.slice(), markers: markerLines.slice(),
                                   avb: avbLines.slice(), dlt: dlt, patchd: logLines.slice() });
                 });

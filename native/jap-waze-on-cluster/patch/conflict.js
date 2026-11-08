@@ -12,7 +12,7 @@
  * the other one was installed after it), and its boot steps (boot,
  * aa-boot) keep guarding such a patch: idle without our backup. Its units
  * with ConditionPathExists=!<that file> do not start (the map and its
- * socket, capture, hudguide, and the crash watcher, which would also start
+ * socket, capture, hudguide, speedd, and the crash watcher, which would also start
  * carplay again after a crash beside the other one's).
  *
  * takeover(log, cb) is the owner's choice in the app: the other app, then

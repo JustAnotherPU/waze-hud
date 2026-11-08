@@ -60,24 +60,53 @@ private:
  * icon is binarised (day or night alike) and read as an arrow (the
  * MapArrowReader, the stem the end nearer the icon's bottom centre): no icon
  * templates. Its distance is read with glyph templates (dist-*.pgm, made by
- * tools/hud_font_templates.py); unknown glyphs leave the distance out. */
+ * tools/hud_font_templates.py); unknown glyphs leave the distance out. Its
+ * street, when a street set is given (str-*.pgm, the same tool), is read the
+ * same way; one glyph under kStreetMin and there is none. */
 struct CardConfig {
-    Rect icon{150, 26, 85, 90}, dist{236, 40, 320, 60}, plain{580, 30, 80, 80};
+    /* street: on test/data/carplay-card-30m.pgm the line is at y 137-163, x
+     * from 165; up 15 with lane arrows (as the distance), with room for
+     * accents and descenders, short of the card's right corners */
+    Rect icon{150, 26, 85, 90}, dist{236, 40, 320, 60}, plain{580, 30, 80, 80}, street{150, 114, 510, 60};
 };
 
 class CardReader {
 public:
-    CardReader(const CardConfig &c, const Templates *t) : c_(c), rec_(t, c.icon, c.dist) {}
+    CardReader(const CardConfig &c, const Templates *t, const Templates *street = nullptr)
+        : c_(c), rec_(t, c.icon, c.dist), street_(street, c.icon, c.street), has_street_(street) {}
     Reading read(const uint8_t *y, unsigned w, unsigned h);
     float angle() const { return angle_; }
     const std::string &text() const { return text_; }   /* the distance's glyphs as read */
 
 private:
     CardConfig c_;
-    Recogniser rec_;
+    Recogniser rec_, street_;
+    bool has_street_;
     float angle_ = 0;
     std::string text_;
 };
+
+/* Waze's route line on the cluster map (light blue, drawn only while it
+ * navigates): the chroma samples of the 4:2:0 atlas (yuv_atlas.h) within
+ * [umin, umax] x [vmin, vmax] whose luma is at least ymin, every 4th sample
+ * across and down (1088x480: 8160 looked at). The colour is the car's to
+ * calibrate (run map-dump, tools/route_calibrate.py): unset (umin < 0),
+ * there is no answer. */
+struct RouteBounds {
+    int umin = -1, umax = -1, vmin = -1, vmax = -1, ymin = 0;
+    unsigned min_px = 1;
+    bool set() const { return umin >= 0; }
+};
+/* "umin,umax,vmin,vmax" (0-255 each, min <= max) into b; false when not that. */
+bool parse_route_uv(const std::string &s, RouteBounds *b);
+unsigned route_pixels(const uint8_t *atlas, unsigned w, unsigned h, const RouteBounds &b);
+/* 1: at least min_px route samples, 0: fewer, -1: bounds unset. */
+int route_state(const uint8_t *atlas, unsigned w, unsigned h, const RouteBounds &b);
+
+/* The atlas as base.yuv (I420: Y, U, V planes) and, with ppm, base.ppm
+ * (full-range BT.601, as the map shader draws it, chroma nearest); false on
+ * an error. */
+bool write_map_dump(const std::string &base, const uint8_t *atlas, unsigned w, unsigned h, bool ppm = true);
 
 }  // namespace woc
 

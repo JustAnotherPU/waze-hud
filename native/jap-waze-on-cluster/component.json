@@ -1,7 +1,7 @@
 {
   "id": "jap-waze-on-cluster",
   "kind": "tool",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "license": "GPL-3.0-or-later",
   "title": "Waze HUD on cluster",
   "description": "Shows the CarPlay or Android Auto map on the instrument cluster and Waze's next turn on BMW's own HUD arrows: a root helper applies the reversible carplay and aapd patches where each is supported, and the capture, running from boot, decodes the map's H.264 and draws it through the cluster renderer whenever the stream flows. Stays off while robertnisipeanu's Waze on cluster is installed",
@@ -129,6 +129,11 @@
       "mode": "0644"
     },
     {
+      "path": "speedd.js",
+      "from": "patch/speedd.js",
+      "mode": "0644"
+    },
+    {
       "path": "pmg_schema.js",
       "from": "patch/pmg_schema.js",
       "mode": "0644"
@@ -191,6 +196,10 @@
     {
       "name": "jap-waze-on-cluster-hudguide.service",
       "from": "systemd/jap-waze-on-cluster-hudguide.service"
+    },
+    {
+      "name": "jap-waze-on-cluster-speedd.service",
+      "from": "systemd/jap-waze-on-cluster-speedd.service"
     }
   ],
   "enable": [
@@ -233,6 +242,10 @@
     {
       "unit": "jap-waze-on-cluster-hudguide.service",
       "target": "multi-user.target"
+    },
+    {
+      "unit": "jap-waze-on-cluster-speedd.service",
+      "target": "multi-user.target"
     }
   ],
   "dropins": [
@@ -259,7 +272,8 @@
     "jap-waze-on-cluster-journal",
     "jap-waze-on-cluster-logs",
     "jap-waze-on-cluster-logs-fw",
-    "jap-waze-on-cluster-hudguide"
+    "jap-waze-on-cluster-hudguide",
+    "jap-waze-on-cluster-speedd"
   ],
   "crashNames": [
     "aapd"
@@ -270,6 +284,7 @@
     "jap-waze-on-cluster-recovery.service",
     "jap-waze-on-cluster-capture.service",
     "jap-waze-on-cluster-journal.service",
-    "jap-waze-on-cluster-hudguide.service"
+    "jap-waze-on-cluster-hudguide.service",
+    "jap-waze-on-cluster-speedd.service"
   ]
 }

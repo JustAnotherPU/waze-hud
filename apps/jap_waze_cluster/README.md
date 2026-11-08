@@ -9,7 +9,9 @@ shell is needed.
 Install it from this repository's catalog (Store source
 `JustAnotherPU/waze-hud:releases`) through the
 [mgu Store](https://github.com/robertnisipeanu/mgu-store). It requires
-jap-waze-on-cluster 1.1.1, which requires the cluster renderer and writes the
+jap-waze-on-cluster 1.1.1 or later (1.2.0 adds the street name, a 15 fps
+cluster stream and the turn kept while CarPlay is hidden; this app needs
+no change for it), which requires the cluster renderer and writes the
 CarPlay patch, and the Android Auto patch where the car supports it, as it
 installs; one head-unit start activates them. After that
 the map is on the cluster whenever CarPlay streams it, whether or not this

@@ -13,7 +13,10 @@
  * - no banner: hidden, and the HUD slot released after its linger;
  * - not active (the stream gone, hud_mode off): cleared;
  * - a lowered shared upload cap spaces the writes out;
- * - the native guidance stub draws nothing. */
+ * - hud.json (v2): the reading, the street only when read, where it came
+ *   from, the stream and the map's arrow; on change and every second; the
+ *   route ahead traced on the map (geo) after them, and its passed as
+ *   HudArrows decides it (near turn then none, the route gone). */
 #include <poll.h>
 #include <signal.h>
 #include <unistd.h>
@@ -227,13 +230,111 @@ int main()
     rd.distance = "450 m";
     native.show(rd, 5000);
     auto slurp = [&]() { std::string t; FILE *f = std::fopen(hj.c_str(), "r"); if (f) { char b[256]; size_t n = std::fread(b, 1, sizeof b, f); t.assign(b, n); std::fclose(f); } return t; };
-    ok("native: the reading goes to the file", slurp() == "{\"maneuver\":\"left\",\"distance\":\"450 m\",\"at\":5000}\n");
+    ok("native: the reading goes to the file, v1's keys first, no street unread",
+       slurp() == "{\"maneuver\":\"left\",\"distance\":\"450 m\",\"source\":\"none\",\"stream\":0,\"map\":\"\",\"route\":-1,\"at\":5000}\n");
+    native.context("card", true, "", -1, 5000);
+    const std::string st = native.state();
+    native.context("card", true, "", -1, 5000);
+    ok("native: a new context is written, the same again is not",
+       native.state() == st && slurp().find("\"source\":\"card\",\"stream\":1") != std::string::npos);
+    rd.street = "Rue de l\xe2\x80\x99\xc3\x89glise";
+    native.show(rd, 5000);
+    ok("native: a street read is written, its UTF-8 as is",
+       slurp() == "{\"maneuver\":\"left\",\"distance\":\"450 m\",\"street\":\"Rue de l\xe2\x80\x99\xc3\x89glise\","
+                  "\"source\":\"card\",\"stream\":1,\"map\":\"\",\"route\":-1,\"at\":5000}\n");
     native.poll(5500);
     ok("native: no rewrite within a second", slurp().find("\"at\":5000") != std::string::npos);
     native.poll(6000);
     ok("native: the heartbeat rewrites it", slurp().find("\"at\":6000") != std::string::npos);
+    native.context("none", true, "right", 1, 6050);
+    ok("native: no card: the map's arrow apart, the route", slurp().find("\"source\":\"none\",\"stream\":1,\"map\":\"right\",\"route\":1,\"at\":6050") !=
+                                                   std::string::npos);
     native.show(Reading(), 6100);
-    ok("native: an empty reading clears it", slurp().find("\"maneuver\":\"\"") != std::string::npos);
+    ok("native: an empty reading clears it, the street too",
+       slurp().find("\"maneuver\":\"\"") != std::string::npos && slurp().find("street") == std::string::npos);
+    native.context("none", false, "", -1, 6200);
+    ok("native: the stream gone", slurp().find("\"stream\":0") != std::string::npos);
+    unlink(hj.c_str());
+
+    {   /* hud.json's stream says 0 whenever the arrows are off, whatever the stream */
+        NativeGuidanceHud *nb = new NativeGuidanceHud(hj);
+        HudConfig hc;
+        hc.card = false;
+        hc.templates_dir = "/nonexistent";
+        hc.dump_flag = "";
+        HudArrows ah(hc, std::unique_ptr<HudBackend>(nb));
+        ah.set_stream(true, 7000);
+        ah.backend()->poll(7000);   /* the heartbeat */
+        ok("native: the stream live, the arrows never on: stream 0", slurp().find("\"stream\":0") != std::string::npos);
+        ah.set_active(true, 7100);
+        ok("native: the arrows on: stream 1", slurp().find("\"stream\":1") != std::string::npos);
+        std::vector<uint8_t> f = atlas("", "");
+        ah.sample(f.data(), W, H, 7200);
+        ok("native: no route bounds: route -1", slurp().find("\"route\":-1") != std::string::npos);
+        ah.backend()->poll(8300);
+        ok("native: the route ahead traced (none on this frame): geo after at, v2 unchanged",
+           slurp().find("\"route\":-1,\"at\":8300,\"geo\":{\"x\":0,\"y\":0,\"side\":\"\",\"angle\":0,\"arc\":0,\"label\":null,\"conf\":0,\"passed\":0,\"at\":7200}}\n") !=
+               std::string::npos);
+        ah.set_active(false, 7300);
+        ok("native: the arrows off (hud_mode, target, picture), the stream still live: stream 0",
+           slurp().find("\"stream\":0") != std::string::npos);
+    }
+    unlink(hj.c_str());
+
+    {   /* geo.passed as HudArrows decides it, a trace a second (hud_arrows.cpp, trace()) */
+        NativeGuidanceHud *nb = new NativeGuidanceHud(hj);
+        HudConfig hc;
+        hc.card = false;
+        hc.templates_dir = "/nonexistent";
+        hc.dump_flag = "";
+        HudArrows ah(hc, std::unique_ptr<HudBackend>(nb));
+        ah.set_stream(true, 10000);
+        ah.set_active(true, 10000);
+        const float cx = hc.geo.car_x;
+        /* a dark atlas, the route ahead (cyan, 16 px) along the given corners */
+        auto frame = [&](std::vector<std::pair<float, float>> pts, bool box) {
+            std::vector<uint8_t> f(W * 720, 40);
+            std::fill(f.begin() + W * H, f.end(), 128);
+            auto disc = [&](float px, float py, float r, int y, int u, int v) {
+                for (int yy = (int)(py - r); yy <= (int)(py + r); yy++)
+                    for (int xx = (int)(px - r); xx <= (int)(px + r); xx++) {
+                        if (xx < 0 || yy < 0 || xx >= (int)W || yy >= (int)H || (xx - px) * (xx - px) + (yy - py) * (yy - py) > r * r) continue;
+                        f[(size_t)yy * W + xx] = (uint8_t)y;
+                        f[(size_t)W * H + (size_t)(yy / 2) * W + xx / 2] = (uint8_t)u;
+                        f[(size_t)W * H + (size_t)(yy / 2) * W + W / 2 + xx / 2] = (uint8_t)v;
+                    }
+            };
+            for (size_t k = 1; k < pts.size(); k++)
+                for (int s = 0; s <= 100; s++)
+                    disc(pts[k - 1].first + (pts[k].first - pts[k - 1].first) * s / 100,
+                         pts[k - 1].second + (pts[k].second - pts[k - 1].second) * s / 100, 8, 172, 176, 40);
+            if (box)
+                for (float x = cx - 80; x <= cx + 80; x += 4) disc(x, 200, 20, 98, 162, 82);
+            return f;
+        };
+        int64_t t = 10000;
+        auto passed = [&](const std::vector<uint8_t> &f) {
+            t += 1000;
+            ah.sample(f.data(), W, H, t);
+            ah.backend()->poll(t);
+            return slurp().find("\"passed\":1") != std::string::npos;
+        };
+        const auto far_turn = frame({{cx, (float)H}, {cx, 60}, {cx + 300, 60}}, false);
+        const auto near_turn = frame({{cx, (float)H}, {cx, 170}, {cx + 300, 170}}, false);
+        const auto straight = frame({{cx, (float)H}, {cx, 10}}, false);
+        const auto none = frame({}, false);
+        const auto covered = frame({}, true);
+        ok("geo: a far turn: not passed", !passed(far_turn) && slurp().find("\"side\":\"right\"") != std::string::npos);
+        ok("geo: the turn near (arc 120 or less): not passed", !passed(near_turn));
+        ok("geo: then straight on (the turn behind): passed", passed(straight));
+        ok("geo: still within 10 s of the near turn: passed", passed(straight));
+        for (int i = 0; i < 10; i++) passed(straight);
+        ok("geo: 10 s on: no longer", !passed(straight));
+        ok("geo: the route gone, found within 5 s: passed", passed(none));
+        ok("geo: the route gone under a box: not passed", !passed(covered));
+        t += 6000;
+        ok("geo: the route gone, none found for over 5 s: not passed", !passed(none));
+    }
     unlink(hj.c_str());
 
     std::printf(failures ? "%d FAILED\n" : "all ok\n", failures);

@@ -12,6 +12,7 @@
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 
 #include "log.h"
 
@@ -21,7 +22,26 @@ namespace {
 
 std::string reading_text(const Reading &r)
 {
-    return r.maneuver.empty() ? std::string("none") : r.maneuver + (r.distance.empty() ? "" : " " + r.distance);
+    return r.maneuver.empty() ? std::string("none")
+                              : r.maneuver + (r.distance.empty() ? "" : " " + r.distance) +
+                                    (r.street.empty() ? "" : ", " + r.street);
+}
+
+/* The dump folder, writable by all (sticky, as /tmp): hudguide (another
+ * user) writes its pairs.csv there too. Made so past the umask, and an
+ * older one (0755 before 0.7.84) changed too when it is ours. */
+void make_dump_dir(const std::string &d)
+{
+    mkdir(d.c_str(), 01777);
+    chmod(d.c_str(), 01777);
+}
+
+/* The wall clock in ms, for file names hudguide's lines pair with. */
+long long wall_ms()
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
 /* A file name part: letters, digits, . and _ only. */
@@ -148,9 +168,17 @@ std::string ImageHud::state() const
 
 void NativeGuidanceHud::show(const Reading &r, int64_t now_ms)
 {
-    if (r == want_)
+    if (r == want_ && r.street == want_.street)
         return;
     want_ = r;
+    write(now_ms);
+}
+
+void NativeGuidanceHud::context(const std::string &source, bool stream, const std::string &map, int route, int64_t now_ms)
+{
+    if (source == source_ && stream == stream_ && map == map_ && route == route_)
+        return;
+    source_ = source, stream_ = stream, map_ = map, route_ = route;
     write(now_ms);
 }
 
@@ -174,7 +202,10 @@ void NativeGuidanceHud::write(int64_t now_ms)
     written_ms_ = now_ms;
     const std::string tmp = path_ + ".tmp";
     const std::string line = "{\"maneuver\":" + json_str(want_.maneuver) + ",\"distance\":" + json_str(want_.distance) +
-                             ",\"at\":" + std::to_string((long long)now_ms) + "}\n";
+                             (want_.street.empty() ? "" : ",\"street\":" + json_str(want_.street)) +
+                             ",\"source\":" + json_str(source_) + ",\"stream\":" + (stream_ ? "1" : "0") +
+                             ",\"map\":" + json_str(map_) + ",\"route\":" + std::to_string(route_) + ",\"at\":" + std::to_string((long long)now_ms) +
+                             (geo_.empty() ? "" : ",\"geo\":" + geo_) + "}\n";
     const int fd = open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
     bool ok = fd >= 0 && ::write(fd, line.data(), line.size()) == (ssize_t)line.size();
     if (fd >= 0) close(fd);
@@ -197,12 +228,12 @@ std::string NativeGuidanceHud::state() const
 }
 
 HudArrows::HudArrows(const HudConfig &cfg, std::unique_ptr<HudBackend> backend)
-    : cfg_(cfg), rec_(&templates_, cfg.icon, cfg.dist, cfg.min_score), map_(cfg.map), debounce_(cfg.stable),
+    : cfg_(cfg), rec_(&templates_, cfg.icon, cfg.dist, cfg.min_score), map_(cfg.map), geo_(cfg.geo), debounce_(cfg.stable),
       backend_(std::move(backend))
 {
     if (cfg_.card) {
         load_card_templates();
-        card_.reset(new CardReader(cfg_.card_cfg, &card_tpl_));
+        card_.reset(new CardReader(cfg_.card_cfg, &card_tpl_, &street_tpl_));
         grab_.reset(new ScreenGrab(cfg_.grab));
     }
     if (cfg_.reader == "card") {
@@ -225,7 +256,8 @@ HudArrows::HudArrows(const HudConfig &cfg, std::unique_ptr<HudBackend> backend)
 }
 
 /* The card's glyph templates: the folder's dist-*.pgm only (the built-in
- * stroke font is not the card's font), read again when the folder changes. */
+ * stroke font is not the card's font), and its str-*.pgm apart for the
+ * street; read again when the folder changes. */
 void HudArrows::load_card_templates()
 {
     struct stat st;
@@ -233,8 +265,11 @@ void HudArrows::load_card_templates()
     card_tpl_ = Templates();
     std::string log;
     card_tpl_.load_dir(cfg_.templates_dir, &log);
-    log_info("hud: card distance: %zu glyphs from %s%s", card_tpl_.glyphs(), cfg_.templates_dir.c_str(),
-             card_tpl_.glyphs() ? "" : " (none: arrows without the distance; tools/hud_font_templates.py)");
+    street_tpl_ = Templates();
+    street_tpl_.load_dir(cfg_.templates_dir, &log, "str");
+    log_info("hud: card distance: %zu glyphs, street: %zu, from %s%s", card_tpl_.glyphs(), street_tpl_.glyphs(),
+             cfg_.templates_dir.c_str(),
+             card_tpl_.glyphs() && street_tpl_.glyphs() ? "" : " (arrows without them: tools/hud_font_templates.py)");
 }
 
 void HudArrows::set_active(bool on, int64_t now_ms)
@@ -246,8 +281,27 @@ void HudArrows::set_active(bool on, int64_t now_ms)
     if (!on) {
         if (grab_) grab_->want(false);
         debounce_ = Debounce(cfg_.stable);
+        street_ = StreetHold();
+        map_hint_.clear();
+        source_ = "none";
+        route_ = -1;
         backend_->show(Reading(), now_ms);
     }
+    push_context(now_ms);
+}
+
+void HudArrows::set_stream(bool live, int64_t now_ms)
+{
+    if (live == stream_)
+        return;
+    stream_ = live;
+    push_context(now_ms);
+}
+
+void HudArrows::push_context(int64_t now_ms)
+{
+    /* stream 0 while the arrows are off: hudguide never reckons then */
+    backend_->context(source_, stream_ && active_, map_hint_, route_, now_ms);
 }
 
 void HudArrows::sample(const uint8_t *y, unsigned w, unsigned h, int64_t now_ms)
@@ -255,6 +309,30 @@ void HudArrows::sample(const uint8_t *y, unsigned w, unsigned h, int64_t now_ms)
     if (now_ms - flag_checked_ms_ >= 1000) {
         flag_ = !cfg_.dump_flag.empty() && access(cfg_.dump_flag.c_str(), F_OK) == 0;
         flag_checked_ms_ = now_ms;
+    }
+    if (map_dump_) {
+        map_dump_ = false;
+        make_dump_dir(cfg_.dump_dir);
+        char n[64];
+        std::snprintf(n, sizeof n, "/map-%ld-%ux%u", (long)time(nullptr), w, h);
+        if (write_map_dump(cfg_.dump_dir + n, y, w, h))
+            log_info("hud: map frame written to %s%s.yuv and .ppm", cfg_.dump_dir.c_str(), n);
+        else
+            log_warn("hud: map dump to %s failed: %s", cfg_.dump_dir.c_str(), strerror(errno));
+    }
+    /* the flag: the map too, once a second, as hudguide's pairs.csv lines
+     * (at: the wall clock in ms), the frame only (0.8 MB each) */
+    if (flag_ && map_dumped_ < cfg_.dump_max && now_ms - last_map_dump_ms_ >= 1000) {
+        last_map_dump_ms_ = now_ms;
+        make_dump_dir(cfg_.dump_dir);
+        char n[64];
+        std::snprintf(n, sizeof n, "/map-%lld", wall_ms());
+        if (write_map_dump(cfg_.dump_dir + n, y, w, h, false))
+            map_dumped_++;
+        else
+            log_warn("hud: map dump to %s failed: %s", cfg_.dump_dir.c_str(), strerror(errno));
+        if (map_dumped_ == cfg_.dump_max)
+            log_info("hud: %u map frames written to %s, the most for one run", map_dumped_, cfg_.dump_dir.c_str());
     }
     const bool dumping = (flag_ || dump_left_) && dumped_ < cfg_.dump_max;
     if ((!active_ && !dumping) || now_ms - last_sample_ms_ < (int64_t)cfg_.sample_ms)
@@ -275,17 +353,69 @@ void HudArrows::sample(const uint8_t *y, unsigned w, unsigned h, int64_t now_ms)
             from_card_ = !last_read_.maneuver.empty();
         }
     }
-    if (!from_card_)
-        last_read_ = cfg_.reader == "map" ? map_.read(y, w, h) : cfg_.reader == "banner" ? rec_.read(y, w, h) : Reading();
+    /* fresh card reads only: the hold's replay would count as a second read */
+    if (from_card_) {
+        street_.push(last_read_);
+        card_seen_ms_ = now_ms;
+        map_hint_.clear();
+    } else if (cfg_.reader == "card") {
+        /* the map's arrow goes apart (hudguide decides what it is worth), read
+         * once a second: it costs; kept between reads, as hudguide counts it
+         * over heartbeats */
+        if (now_ms - map_ms_ >= 1000) {
+            map_ms_ = now_ms;
+            map_hint_ = map_.read(y, w, h).maneuver;
+        }
+        last_read_ = Reading();
+    } else {
+        last_read_ = cfg_.reader == "banner" ? rec_.read(y, w, h) : map_.read(y, w, h);
+    }
+    if (active_ && now_ms - route_ms_ >= 1000) {   /* cheap, but once a second is all hudguide reads */
+        route_ms_ = now_ms;
+        route_ = route_state(y, w, h, cfg_.route);
+        trace(y, w, h, now_ms);
+    }
     if (card_)
         last_read_ = hold_.pick(last_read_, from_card_, now_ms);
+    if (last_read_.maneuver.empty())
+        street_.push(Reading());   /* the card gone: its street too */
     if (dumping && now_ms - last_dump_ms_ >= 1000)
         dump(y, w, h, last_read_, now_ms);
+    if (!active_)
+        return;
     Reading out;
-    if (active_ && debounce_.push(last_read_, &out)) {
+    if (debounce_.push(last_read_, &out))
         log_info("hud: %s", reading_text(out).c_str());
-        backend_->show(out, now_ms);
-    }
+    Reading shown = debounce_.current();
+    shown.street = shown.maneuver.empty() ? "" : street_.street();
+    /* the map and banner readers (not the default) name themselves */
+    source_ = shown.maneuver.empty() ? "none" : from_card_ ? "card" : cfg_.reader == "card" ? "hold" : cfg_.reader;
+    backend_->show(shown, now_ms);   /* the backends write on change only */
+    push_context(now_ms);
+}
+
+/* The route ahead, card or not (with the card: pairs to check it against).
+ * passed, for hudguide (it ends the reckoned turn on two heartbeats): the
+ * trace's own (the route leaving the chevron sideways, a bend within 40 px
+ * of it), or no route ahead only when one was found within 5 s and no box
+ * covers the seed window (a box near the turn hides the route there), or
+ * a near bend (arc 120 px or less, within 10 s) followed by none or one
+ * over 120 px farther (the turn behind us, the next one ahead). */
+void HudArrows::trace(const uint8_t *atlas, unsigned w, unsigned h, int64_t now_ms)
+{
+    if (!cfg_.geo.ahead.set())
+        return;
+    GeoReading g = geo_.read(atlas, w, h);
+    if (!g.found)
+        g.passed = !g.seed_covered && now_ms - geo_found_ms_ <= 5000;
+    else
+        geo_found_ms_ = now_ms;
+    if (g.found && now_ms - near_ms_ <= 10000 && near_arc_ > 0 && (!g.bend || g.arc > near_arc_ + 120))
+        g.passed = true;
+    if (g.bend && g.arc <= 120 && (now_ms - near_ms_ > 10000 || g.arc <= near_arc_ + 40))
+        near_arc_ = g.arc, near_ms_ = now_ms;
+    geo_last_ = g;
+    backend_->geo(geo_json(g, now_ms), now_ms);   /* at: hudguide counts traces, not heartbeats */
 }
 
 void HudArrows::dump(const uint8_t *y, unsigned w, unsigned h, const Reading &r, int64_t now_ms)
@@ -293,7 +423,7 @@ void HudArrows::dump(const uint8_t *y, unsigned w, unsigned h, const Reading &r,
     last_dump_ms_ = now_ms;
     if (dump_left_)
         dump_left_--;
-    mkdir(cfg_.dump_dir.c_str(), 0755);
+    make_dump_dir(cfg_.dump_dir);
     char n[16];
     std::snprintf(n, sizeof n, "%04u", ++dumped_);
     const std::string base = cfg_.dump_dir + "/" + n;
@@ -326,7 +456,9 @@ void HudArrows::dump(const uint8_t *y, unsigned w, unsigned h, const Reading &r,
 std::string HudArrows::report() const
 {
     return std::string("hud: arrows ") + (active_ ? "on" : "off") + ", last read " + reading_text(last_read_) +
-           ", shown " + reading_text(debounce_.current()) +
+           ", shown " + reading_text(debounce_.current()) + (street_.street().empty() ? "" : ", " + street_.street()) +
+           (map_hint_.empty() ? "" : ", map " + map_hint_) + ", route " + std::to_string(route_) +
+           (cfg_.geo.ahead.set() ? ", geo " + geo_json(geo_last_) : std::string()) +
            (from_card_ ? std::string(" (centre screen card)") : std::string()) +
            (cfg_.reader == "map" ? ", map angle " + std::to_string((int)std::lround(map_.angle())) : std::string()) +
            (grab_ ? "; " + grab_->state() : std::string()) + "; " + backend_->state() + "\n";

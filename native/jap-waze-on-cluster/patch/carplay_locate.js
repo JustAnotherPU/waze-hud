@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Robert Nisipeanu
-/* carplay_locate.js — finds the four carplay-patch edit sites (PATCH.md) in a
+/* carplay_locate.js — finds the five carplay-patch edit sites (PATCH.md) in a
  * carplay build by code and data structure. Each site has to be found exactly
  * once and pass its semantic checks; otherwise that edit carries ok:false and
  * a short reason naming what was not found. File offsets and virtual
  * addresses are converted through the ELF program headers, and function
  * bounds come from the .eh_frame_hdr search table. The variant, self-start and
  * resolution sites are found from the functions that load their own name
- * strings, and a site a dynamic relocation would rewrite at load is refused.
+ * strings, the frame-rate site from the resolution site's caller, and a site a
+ * dynamic relocation would rewrite at load is refused.
  * It only reads the buffer.
  *
  * Node 8 on the unit, no dependencies.
@@ -391,14 +392,17 @@ function fieldRead(im, f) {
     }
     return found.length === 1 ? found[0] : null;
 }
+/* The functions doing so: [{ off, end }], each once. */
 function layoutRead(im, ctor) {
-    return im.callers(ctor.off).some(function (at) {
+    var out = [];
+    im.callers(ctor.off).forEach(function (at) {
         var fn = im.func(at);
-        if (!fn) return false;
+        if (!fn || out.some(function (f) { return f.off === fn.off; })) return;
         var got = im.calls(at + 5, Math.min(fn.end, at + 0x100)).map(function (c) { return fieldRead(im, c.to); })
             .filter(function (r) { return r; });
-        return FIELDS.every(function (f) { return got.indexOf(f) >= 0; });
+        if (FIELDS.every(function (f) { return got.indexOf(f) >= 0; })) out.push(fn);
     });
+    return out;
 }
 
 /* The variant check called at `c`: 'high' for `[rdi] == IC_HIGH`, 'mid' for
@@ -455,9 +459,75 @@ function locateRes(im, str, refs) {
     if (high.err || mid.err) return { ok: false, reason: high.err || mid.err };
     if (high.to === mid.to) return { ok: false, reason: 'resolution: IC_HIGH and IC_MID share a builder' };
     if (Math.abs(high.to - ctor.off) > NEAR || Math.abs(mid.to - ctor.off) > NEAR) return { ok: false, reason: 'resolution: builders far from the constructor' };
-    if (!layoutRead(im, ctor)) return { ok: false, reason: 'resolution: geometry getters not found' };
+    if (!layoutRead(im, ctor).length) return { ok: false, reason: 'resolution: geometry getters not found' };
     var b = builders[high.to];
     return { ok: true, builder: high.to, mm: b.mm, px: b.px, safe1: b.safe1, safe2: b.safe2 };
+}
+
+/* ---- Edit 5: the IC display's maxFPS ------------------------------------ */
+
+/* call getter ; mov eax,[rax] ; mov [rbp+disp32],eax: a display's maxFPS read
+ * through its getter into the display's arguments; and this patch's
+ * mov eax,imm32 ; xchg ax,ax (2-byte nop) in place of the first two. */
+var FPS_LOAD = [0xe8].concat(any(4)).concat([0x8b, 0x00, 0x89, 0x85]).concat(any(4));
+var FPS_PATCHED = [0xb8].concat(any(4)).concat([0x66, 0x90, 0x89, 0x85]).concat(any(4));
+var FPS_CONST_MAX = 240;
+
+/* A getter returning an address at `f`: a short function with one
+ * `lea rax,[rip+d32]`. The lea's offset, or null. */
+function addrGetter(im, f) {
+    var fn = f === null ? null : im.func(f);
+    if (!fn || fn.off !== f || fn.end - fn.off > 0x40) return null;
+    var l = scan(im.buf, f, fn.end, [0x48, 0x8d, 0x05]);
+    return l.length === 1 ? l[0] : null;
+}
+
+/* One returning the address of a u32 constant in the file, outside the
+ * getter: the constant's offset, or null. */
+function constGetter(im, f) {
+    var l = addrGetter(im, f), t = l === null ? null : im.rel(l + 3, l + 7);
+    return t === null || t + 4 > im.buf.length || (t >= f && t < l + 7) ? null : t;
+}
+
+/* Every display reads its maxFPS through one getter of a u32 constant, which
+ * both read: the main display and the IC display. The getter is the one
+ * constant getter any load of that shape calls, called only from those loads.
+ * The IC display's is the one load (stock or patched) in the function that
+ * builds the IC display info: the caller of the ICSafeAreaProvider constructor
+ * reading the geometry through its getters (Edit 4), and it is followed by the
+ * call to the IC display's uuid getter. The main display's is the getter's
+ * other load. The constant itself is shared and never written. */
+function locateFps(im, str, refs) {
+    if (!im.starts.length) return { ok: false, reason: 'fps: no function table' };
+    var ctor = funcOfString(im, refs, str.ctor, NAMES.ctor[2]);
+    if (ctor.err) return { ok: false, reason: ctor.err.replace(/^resolution:/, 'fps:') };
+    var info = layoutRead(im, ctor);
+    if (info.length !== 1) return { ok: false, reason: 'fps: IC display builder ' + (info.length ? 'found ' + info.length + ' times' : 'not found') };
+    info = info[0];
+    var buf = im.buf, known = {}, loads = {};
+    scan(buf, im.exec.off, im.exec.end, FPS_LOAD).forEach(function (at) {
+        var to = im.rel(at + 1, at + 5);
+        if (to === null) return;
+        if (known[to] === undefined) known[to] = constGetter(im, to);
+        if (known[to] !== null) (loads[to] = loads[to] || []).push(at);
+    });
+    var gs = Object.keys(loads);
+    if (gs.length !== 1) return { ok: false, reason: 'fps: maxFPS getter ' + (gs.length ? 'found ' + gs.length + ' times' : 'not found') };
+    var g = +gs[0], value = buf.readUInt32LE(known[g]);
+    function inInfo(p) { return p >= info.off && p < info.end; }
+    var ic = loads[g].filter(inInfo).concat(scan(buf, info.off, info.end, FPS_PATCHED));
+    var main = loads[g].filter(function (p) { return !inInfo(p); });
+    if (ic.length !== 1) return { ok: false, reason: 'fps: IC display maxFPS load ' + (ic.length ? 'found ' + ic.length + ' times' : 'not found') };
+    if (main.length !== 1) return { ok: false, reason: 'fps: main display maxFPS load ' + (main.length ? 'found ' + main.length + ' times' : 'not found') };
+    if (im.callers(g).length !== loads[g].length) return { ok: false, reason: 'fps: maxFPS getter called elsewhere' };
+    if (value < 1 || value > FPS_CONST_MAX) return { ok: false, reason: 'fps: maxFPS constant ' + value + ' out of range' };
+    var at = ic[0];
+    if (buf[at + 13] !== 0xe8 || addrGetter(im, im.rel(at + 14, at + 18)) === null)
+        return { ok: false, reason: 'fps: IC display load not followed by its uuid getter' };
+    return {
+        ok: true, offset: at, getter: g, main: main[0], builder: info.off, constant: known[g], value: value,
+        original: 'e8' + hex32(im.va(g) - im.va(at + 5)) + '8b00'
+    };
 }
 
 /* ---- relocations and version -------------------------------------------- */
@@ -500,13 +570,13 @@ function version(buf) {
     return seen.length === 1 ? seen[0] : null;
 }
 
-/* All four sites: { elf: true|false, reason (not an ELF / why), buildId,
- * version, variant, sink, selfstart, res }, each edit { ok, reason } plus its
+/* All five sites: { elf: true|false, reason (not an ELF / why), buildId,
+ * version, variant, sink, selfstart, res, fps }, each edit { ok, reason } plus its
  * offsets and stock/patched values. ok is true when every edit was found. */
 function locate(buf) {
     var elf = parseElf(buf);
     var none = { ok: false, reason: 'not located' };
-    if (!elf.load) return { ok: false, elf: false, reason: elf.reason, buildId: null, version: null, variant: none, sink: none, selfstart: none, res: none };
+    if (!elf.load) return { ok: false, elf: false, reason: elf.reason, buildId: null, version: null, variant: none, sink: none, selfstart: none, res: none, fps: none };
     var im = new Image(buf, elf), str = {}, offs = [], sink = locateSink(buf);
     Object.keys(NAMES).forEach(function (k) {
         str[k] = namedString(buf, NAMES[k][0], NAMES[k][1], NAMES[k][2]);
@@ -515,18 +585,19 @@ function locate(buf) {
     if (sink.ok) for (var i = 0; i < sink.len; i++) offs.push(sink.offset + i);
     var refs = leaRefs(im, offs);
     var out = { elf: true, buildId: buildId(buf, elf.notes), version: version(buf), variant: locateVariant(im, str, refs), sink: sinkRefs(sink, refs),
-                selfstart: locateSelfstart(im, str, refs), res: locateRes(im, str, refs) };
+                selfstart: locateSelfstart(im, str, refs), res: locateRes(im, str, refs), fps: locateFps(im, str, refs) };
     var regions = [];
     if (out.variant.ok) regions.push(['variant', out.variant.slot, 4]);
     if (out.sink.ok) regions.push(['sink', out.sink.offset, out.sink.len]);
     if (out.selfstart.ok) regions.push(['selfstart', out.selfstart.offset, 5]);
     if (out.res.ok) [out.res.mm, out.res.px, out.res.safe1, out.res.safe2].forEach(function (o) { regions.push(['res', o, 8]); });
-    var hit = relocated(im, regions), label = { variant: 'variant', sink: 'sink', selfstart: 'self-start', res: 'resolution' };
+    if (out.fps.ok) regions.push(['fps', out.fps.offset, 7]);
+    var hit = relocated(im, regions), label = { variant: 'variant', sink: 'sink', selfstart: 'self-start', res: 'resolution', fps: 'fps' };
     Object.keys(label).forEach(function (e) {
         if (out[e].ok && (hit.all || hit.edits.indexOf(e) >= 0))
             out[e] = { ok: false, reason: label[e] + ': ' + (hit.all || 'a dynamic relocation over the edit') };
     });
-    var failed = [out.variant, out.sink, out.selfstart, out.res].filter(function (e) { return !e.ok; });
+    var failed = [out.variant, out.sink, out.selfstart, out.res, out.fps].filter(function (e) { return !e.ok; });
     out.ok = failed.length === 0;
     if (failed.length) out.reason = failed.map(function (e) { return e.reason; }).join('; ');
     return out;

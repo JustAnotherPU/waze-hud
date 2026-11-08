@@ -192,8 +192,8 @@ async function main() {
     var units = path.join(__dirname, '..', '..', 'systemd');
     var COND = 'ConditionPathExists=!/var/opt/waze-on-cluster/current/component.json';
     var dormant = ['jap-waze-on-cluster.socket', 'jap-waze-on-cluster.service', 'jap-waze-on-cluster-capture.service', 'jap-waze-on-cluster-hudguide.service',
-        'jap-waze-on-cluster-recovery.service'];
-    ok('units: the map and its socket, capture, hudguide and the crash watcher are dormant while the other tool is installed',
+        'jap-waze-on-cluster-speedd.service', 'jap-waze-on-cluster-recovery.service'];
+    ok('units: the map and its socket, capture, hudguide, speedd and the crash watcher are dormant while the other tool is installed',
         dormant.every(function (u) { return fs.readFileSync(path.join(units, u), 'utf8').indexOf(COND) >= 0; }));
     ok('units: patchd and the boot steps are not (the app needs patchd; the boot steps guard a patch of ours)',
         ['jap-waze-on-cluster-patchd.service', 'jap-waze-on-cluster-boot.service', 'jap-waze-on-cluster-aa-boot.service']

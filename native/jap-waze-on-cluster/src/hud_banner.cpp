@@ -159,11 +159,14 @@ bool icon_feature(const Gray &g, std::vector<float> *v)
 struct Line {
     std::vector<std::vector<float>> v;
     std::vector<float> rel_h;
+    std::vector<int> h;        /* in pixels */
     std::vector<bool> point;   /* a decimal point or comma */
+    std::vector<int> gap;      /* pixels from the glyph before */
 };
 
-/* The distance crop's glyphs, left to right; parts overlapping in x are one
- * glyph (an i and its dot). */
+/* The crop's glyphs, left to right. Parts overlapping in x are one glyph
+ * when one is small beside the other (an i and its dot, an accent) or they
+ * overlap by half the narrower: a kerned pair (Te, Vo) stays two. */
 bool split_line(const Gray &g, Line *line)
 {
     std::vector<uint8_t> mask;
@@ -176,7 +179,9 @@ bool split_line(const Gray &g, Line *line)
     std::sort(cs.begin(), cs.end(), [](const Comp &a, const Comp &b) { return a.x0 < b.x0; });
     std::vector<Comp> gl;
     for (const Comp &c : cs) {
-        if (!gl.empty() && c.x0 <= gl.back().x1) {
+        const int ov = gl.empty() ? 0 : std::min(gl.back().x1, c.x1) - c.x0 + 1;
+        if (ov > 0 && (std::min(c.area, gl.back().area) * 4 < std::max(c.area, gl.back().area) ||
+                       ov * 2 >= std::min(c.x1 - c.x0, gl.back().x1 - gl.back().x0) + 1)) {
             Comp &m = gl.back();
             m.x1 = std::max(m.x1, c.x1), m.y0 = std::min(m.y0, c.y0), m.y1 = std::max(m.y1, c.y1);
             m.area += c.area;
@@ -190,16 +195,64 @@ bool split_line(const Gray &g, Line *line)
     if (hmax < 6)
         return false;
     int top = (int)g.h, bottom = 0;
+    std::vector<int> foot(g.h, 0);
     for (const Comp &c : gl)
         if ((c.y1 - c.y0 + 1) * 2 > hmax)
-            top = std::min(top, c.y0), bottom = std::max(bottom, c.y1);
-    for (const Comp &c : gl) {
+            top = std::min(top, c.y0), bottom = std::max(bottom, c.y1), foot[c.y1]++;
+    /* the baseline: where most glyphs end (a g or a p goes below it) */
+    const int base = (int)(std::max_element(foot.begin(), foot.end()) - foot.begin());
+    for (size_t i = 0; i < gl.size(); i++) {
+        const Comp &c = gl[i];
         const int ch = c.y1 - c.y0 + 1;
-        line->point.push_back(ch * 100 < hmax * 45 && c.y0 > top + (bottom - top) * 55 / 100);
+        /* on the baseline: a hyphen is as small but higher */
+        line->point.push_back(ch * 100 < hmax * 45 && c.y0 > top + (bottom - top) * 55 / 100 &&
+                              c.y1 >= base - std::max(2, hmax / 10));
+        line->gap.push_back(i > 0 ? c.x0 - gl[i - 1].x1 - 1 : 0);
+        line->h.push_back(ch);
         line->rel_h.push_back((float)ch / hmax);
         line->v.push_back(fit(mask, g.w, c, kGlyphN));
     }
     return true;
+}
+
+/* UTF-8 text split into its characters, each a string. */
+std::vector<std::string> utf8_chars(const std::string &s)
+{
+    std::vector<std::string> out;
+    for (size_t i = 0; i < s.size();) {
+        size_t n = 1;
+        while (i + n < s.size() && ((unsigned char)s[i + n] & 0xc0) == 0x80)
+            n++;
+        out.push_back(s.substr(i, n));
+        i += n;
+    }
+    return out;
+}
+
+/* "u00e9u0048" as UTF-8 ("éH"); empty when it is not that. */
+std::string hex_label(const std::string &s)
+{
+    std::string out;
+    for (size_t i = 0; i < s.size();) {
+        if (s[i] != 'u' || i + 5 > s.size())
+            return "";
+        char *end;
+        const unsigned long c = std::strtoul(s.substr(i + 1, 4).c_str(), &end, 16);
+        if (*end || !c)
+            return "";
+        if (c < 0x80) {
+            out.push_back((char)c);
+        } else if (c < 0x800) {
+            out.push_back((char)(0xc0 | c >> 6));
+            out.push_back((char)(0x80 | (c & 0x3f)));
+        } else {
+            out.push_back((char)(0xe0 | c >> 12));
+            out.push_back((char)(0x80 | ((c >> 6) & 0x3f)));
+            out.push_back((char)(0x80 | (c & 0x3f)));
+        }
+        i += 5;
+    }
+    return out;
 }
 
 uint32_t crc32(const uint8_t *p, size_t n, uint32_t c = 0)
@@ -289,28 +342,32 @@ bool Templates::add_icon(const std::string &label, const Gray &g)
     return true;
 }
 
-bool Templates::add_line(const std::string &text, const Gray &g)
+bool Templates::add_line(const std::string &text, const Gray &g, bool street)
 {
-    std::string chars;
-    for (char c : text)
-        if (c != ' ')
+    std::vector<std::string> chars;
+    for (const std::string &c : utf8_chars(street ? "H" + text : text))
+        if (c != " ")
             chars.push_back(c);
     Line line;
     if (!split_line(g, &line) || line.v.size() != chars.size())
         return false;
-    for (size_t i = 0; i < chars.size(); i++) {
-        if (chars[i] == '.' || chars[i] == ',')
+    if (street) {
+        ref_sum_ += (float)line.h[0];
+        ref_n_++;
+    }
+    for (size_t i = street ? 1 : 0; i < chars.size(); i++) {
+        if (chars[i] == "." || chars[i] == ",")
             continue;   /* told by its size and place */
         T t;
-        t.label = std::string(1, chars[i]);
+        t.label = chars[i];
         t.v = line.v[i];
-        t.rel_h = line.rel_h[i];
+        t.rel_h = street ? (float)line.h[i] / line.h[0] : line.rel_h[i];
         glyphs_.push_back(t);
     }
     return true;
 }
 
-int Templates::load_dir(const std::string &dir, std::string *log)
+int Templates::load_dir(const std::string &dir, std::string *log, const std::string &glyph_kind)
 {
     DIR *d = opendir(dir.c_str());
     if (!d)
@@ -326,12 +383,18 @@ int Templates::load_dir(const std::string &dir, std::string *log)
     std::vector<T> icons, glyphs;
     std::swap(icons, icons_);
     std::swap(glyphs, glyphs_);
+    const float ref_sum = ref_sum_;
+    const int ref_n = ref_n_;
+    ref_sum_ = 0, ref_n_ = 0;
     int added = 0;
     for (const std::string &n : names) {
         const std::string stem = n.substr(0, n.size() - 4);
         const size_t a = stem.find('-'), b = stem.rfind('-');
         const std::string kind = stem.substr(0, a);
         const std::string label = a == std::string::npos ? "" : stem.substr(a + 1, (b > a ? b : stem.size()) - a - 1);
+        const bool street = glyph_kind == "str";
+        if (kind == (street ? "dist" : "str") || (street && kind == "icon"))
+            continue;   /* the other set's */
         Gray g;
         bool used = false;
         if (!read_pgm(dir + "/" + n, &g))
@@ -340,17 +403,21 @@ int Templates::load_dir(const std::string &dir, std::string *log)
             used = add_icon(label, g);
         else if (kind == "dist")
             used = add_line(label, g);
+        else if (kind == "str")
+            used = !hex_label(label).empty() && add_line(hex_label(label), g, true);
         if (used)
             added++;
         else if (!g.px.empty())
-            *log += n + (kind == "dist" ? ": its glyphs do not match its text\n"
-                                        : ": not an icon-<manoeuvre>-<n> or dist-<text>-<n> template\n");
+            *log += n + (kind == "dist" || kind == "str" ? ": its glyphs do not match its text\n"
+                                        : ": not an icon-<manoeuvre>-<n>, dist-<text>-<n> or str-<hex>-<n> template\n");
     }
     /* What the folder has replaces our drawings of the same kind. */
     if (icons_.empty())
         icons_ = icons;
-    if (glyphs_.empty())
+    if (glyphs_.empty()) {
         glyphs_ = glyphs;
+        ref_sum_ = ref_sum, ref_n_ = ref_n;
+    }
     return added;
 }
 
@@ -371,15 +438,52 @@ std::string Recogniser::read_text(const Gray &g) const
             continue;
         }
         float best = kGlyphMin;
-        char c = '?';
+        std::string c = "?";
         for (const Templates::T &t : t_->glyph_set()) {
             const float s = similarity(line.v[i], t.v) - 0.6f * std::fabs(line.rel_h[i] - t.rel_h);
             if (s > best) {
                 best = s;
-                c = t.label[0];
+                c = t.label;
             }
         }
-        out.push_back(c);
+        out += c;
+    }
+    return out;
+}
+
+std::string Recogniser::read_words(const Gray &g, float min_score) const
+{
+    Line line;
+    const float ref = t_ ? t_->ref_h() : 0;
+    if (!ref || !split_line(g, &line))
+        return "";
+    size_t n = line.v.size();
+    if (n >= 3 && line.point[n - 1] && line.point[n - 2] && line.point[n - 3])
+        n -= 3;   /* iOS cut the name: what is left is still its start */
+    else if (n >= 2 && line.point[n - 1] && line.point[n - 2])
+        return "";   /* an ellipsis with a dot lost in a letter: no name ends ".." */
+    std::string out;
+    for (size_t i = 0; i < n; i++) {
+        /* SF Pro on the card: letters 6 px apart at most, words 9 or more
+         * (an H 24 px tall) */
+        if (line.gap[i] * 10 > ref * 3 && !out.empty())
+            out.push_back(' ');
+        if (line.point[i]) {
+            out.push_back('.');
+            continue;
+        }
+        float best = -1;
+        const std::string *c = nullptr;
+        for (const Templates::T &t : t_->glyph_set()) {
+            const float s = similarity(line.v[i], t.v) - 0.6f * std::fabs(line.h[i] / ref - t.rel_h);
+            if (s > best) {
+                best = s;
+                c = &t.label;
+            }
+        }
+        if (!c || best < min_score)
+            return "";
+        out += *c;
     }
     return out;
 }
@@ -434,6 +538,36 @@ Reading CardHold::pick(const Reading &r, bool from_card, int64_t now_ms)
     card_ = out;
     card_ms_ = now_ms;
     return out;
+}
+
+double distance_metres(const std::string &d)
+{
+    double v;
+    char unit[4];
+    if (std::sscanf(d.c_str(), "%lf %3s", &v, unit) != 2)
+        return -1;
+    const std::string u = unit;
+    return u == "m" ? v : u == "km" ? v * 1000 : u == "ft" ? v * 0.3048 : u == "mi" ? v * 1609.344 : -1;
+}
+
+void StreetHold::push(const Reading &card)
+{
+    const double m = distance_metres(card.distance);
+    if (card.maneuver != maneuver_ || (m >= 0 && metres_ >= 0 && m > metres_ + 30)) {
+        maneuver_ = card.maneuver;
+        cand_.clear();
+        shown_.clear();
+        seen_ = 0;
+        metres_ = -1;
+    }
+    if (m >= 0)
+        metres_ = m;
+    if (card.street.empty())
+        return;
+    seen_ = card.street == cand_ ? seen_ + 1 : 1;
+    cand_ = card.street;
+    if (seen_ >= 2)
+        shown_ = cand_;
 }
 
 std::string parse_distance(const std::string &text)

@@ -13,11 +13,12 @@
  *   jap-waze-on-cluster [-c FILE] run sail|map|panel     map that target from now on,
  *                                                   and follow the status from a shell
  *                                                   (sail = map, the native central-map slot)
- *   jap-waze-on-cluster [-c FILE] run hud|hud-off|hud-video|hud-dump
+ *   jap-waze-on-cluster [-c FILE] run hud|hud-off|hud-video|hud-dump|map-dump
  *                                                   Waze's arrows on the HUD (hud_mode
  *                                                   arrows), none, the map video itself on
  *                                                   the HUD (the old `run hud`), or dump the
- *                                                   next 30 banner crops (README.md "HUD arrows")
+ *                                                   next 30 banner crops, or the next map
+ *                                                   frame as YUV and PPM (README.md "HUD arrows")
  *   jap-waze-on-cluster [-c FILE] bench-pack I420_FILE  time the packed-motion packing
  *
  * The H.264 reaches this tool through the sink the carplay patch points at
@@ -116,6 +117,9 @@ public:
         } else if (cmd == "hud-dump") {
             log_info("hud: dumping the next 30 banner crops");
             hud_->arm_dump(30);
+        } else if (cmd == "map-dump") {
+            log_info("hud: dumping the next map frame");
+            hud_->arm_map_dump();
         } else if (cmd == "start" && it != msg.end()) {
             log_info("start %s", it->second.c_str());
             if (!feed_->set_target(it->second))
@@ -211,6 +215,8 @@ int serve(const Config &cfg)
         {"target_fps", 0, 60},      {"pan_blocks", 0, 1},            {"stall_ms", 1000, 600000},
         {"freeze_ms", 0, 600000},   {"freeze_min_fps", 1, 60},       {"alt_screen_port", 0, 65535},
         {"idle_ms", 1000, 600000},  {"blank_ms", 1000, 600000},
+        {"picture_fps", 0, 60},     {"hidden_fps", 1, 60},           {"keep_ms", 0, 10000},
+        {"still_ms", 0, 600000},
         {"alt_screen_uid", 0, 4294967294L}};
     for (const Range &r : ranges)
         if (cfg.num(r.key) < r.lo || cfg.num(r.key) > r.hi) {
@@ -222,6 +228,16 @@ int serve(const Config &cfg)
     vc.freeze.ms = (unsigned)cfg.num("freeze_ms");
     vc.freeze.min_fps = (unsigned)cfg.num("freeze_min_fps");
     vc.freeze.blank_ms = (unsigned)cfg.num("blank_ms");
+    /* hidden, pictures still feed the freeze watch, so never below its min_fps */
+    const long picture_fps = cfg.num("picture_fps");
+    const long hidden_fps = std::max(cfg.num("hidden_fps"), (long)vc.freeze.min_fps);
+    const int64_t shown_interval_ms = picture_fps ? 1000 / picture_fps : 0;
+    const int64_t hidden_interval_ms = picture_fps ? 1000 / std::min(hidden_fps, picture_fps) : 0;
+    SendGate send_gate(cfg.num("keep_ms"));
+    uint64_t throttled_seen = 0;
+    /* a still map (parked, at a light) needs no more pictures than a hidden one */
+    const int64_t still_ms = cfg.num("still_ms");
+    int64_t changed_ms = -1;
 
     FeedConfig fc;
     fc.socket = cfg.str("render_socket");
@@ -267,9 +283,18 @@ int serve(const Config &cfg)
     }
     if (!parse_rect(cfg.str("hud_card_icon_rect"), &hc.card_cfg.icon) ||
         !parse_rect(cfg.str("hud_card_dist_rect"), &hc.card_cfg.dist) ||
-        !parse_rect(cfg.str("hud_card_plain_rect"), &hc.card_cfg.plain) || !parse_rect(cfg.str("hud_card_roi"), &hc.card_roi)) {
-        log_error("hud_card_icon_rect, hud_card_dist_rect, hud_card_plain_rect and hud_card_roi must be WxH+X+Y");
+        !parse_rect(cfg.str("hud_card_plain_rect"), &hc.card_cfg.plain) ||
+        !parse_rect(cfg.str("hud_card_street_rect"), &hc.card_cfg.street) || !parse_rect(cfg.str("hud_card_roi"), &hc.card_roi)) {
+        log_error("hud_card_icon_rect, hud_card_dist_rect, hud_card_plain_rect, hud_card_street_rect and hud_card_roi must be WxH+X+Y");
         return 1;
+    }
+    {   /* the grabber converts only what the card reader and its dumps read */
+        unsigned x0 = ~0u, y0 = ~0u, x1 = 0, y1 = 0;
+        for (const Rect &r : {hc.card_cfg.icon, hc.card_cfg.dist, hc.card_cfg.plain, hc.card_cfg.street, hc.card_roi}) {
+            x0 = std::min(x0, r.x), y0 = std::min(y0, r.y);
+            x1 = std::max(x1, r.x + r.w), y1 = std::max(y1, r.y + r.h);
+        }
+        hc.grab.crop_x = x0, hc.grab.crop_y = y0, hc.grab.crop_w = x1 - x0, hc.grab.crop_h = y1 - y0;
     }
     if (hud_backend != "image" && hud_backend != "native") {
         log_error("hud_backend must be image or native");
@@ -278,7 +303,9 @@ int serve(const Config &cfg)
     struct HudRange { const char *key; long lo, hi; } hud_ranges[] = {
         {"hud_min_score", 1, 100}, {"hud_sample_ms", 200, 5000}, {"hud_stable", 1, 10},
         {"hud_dump_max", 0, 10000}, {"hud_builtin_icons", 0, 1},
-        {"hud_car_x", 0, 4096}, {"hud_car_y", 0, 4096}, {"hud_min_luma", 128, 255}, {"hud_card", 0, 1}};
+        {"hud_car_x", 0, 4096}, {"hud_car_y", 0, 4096}, {"hud_min_luma", 128, 255}, {"hud_card", 0, 1},
+        {"hud_route_ymin", 0, 255}, {"hud_route_min_px", 1, 100000}, {"hud_bg_hold_s", 0, 3600},
+        {"hud_route_bright_ymin", 0, 255}, {"hud_geo_car_x", 0, 4096}, {"hud_geo_car_y", 0, 4096}, {"hud_geo_next", 0, 1}};
     for (const HudRange &r : hud_ranges)
         if (cfg.num(r.key) < r.lo || cfg.num(r.key) > r.hi) {
             log_error("%s must be from %ld to %ld", r.key, r.lo, r.hi);
@@ -292,6 +319,22 @@ int serve(const Config &cfg)
     hc.dump_flag = cfg.str("hud_dump_flag");
     hc.dump_dir = cfg.str("hud_dump_dir");
     hc.dump_max = (unsigned)cfg.num("hud_dump_max");
+    if (!cfg.str("hud_route_uv").empty() && !parse_route_uv(cfg.str("hud_route_uv"), &hc.route)) {
+        log_error("hud_route_uv must be umin,umax,vmin,vmax (0-255, min <= max) or empty");
+        return 1;
+    }
+    hc.route.ymin = (int)cfg.num("hud_route_ymin");
+    hc.route.min_px = (unsigned)cfg.num("hud_route_min_px");
+    /* the route ahead (hud_route.h): unset hud_geo_uv, no trace and no geo */
+    hc.geo.ahead = RouteBounds();
+    if ((!cfg.str("hud_geo_uv").empty() && !parse_route_uv(cfg.str("hud_geo_uv"), &hc.geo.ahead)) ||
+        !parse_route_uv(cfg.str("hud_label_uv"), &hc.geo.label)) {
+        log_error("hud_geo_uv (or empty) and hud_label_uv must be umin,umax,vmin,vmax (0-255, min <= max)");
+        return 1;
+    }
+    hc.geo.ahead.ymin = (int)cfg.num("hud_route_bright_ymin");
+    hc.geo.car_x = (unsigned)cfg.num("hud_geo_car_x");
+    hc.geo.car_y = (unsigned)cfg.num("hud_geo_car_y");
 
     sigset_t sigs;
     sigemptyset(&sigs);
@@ -355,10 +398,14 @@ int serve(const Config &cfg)
             control.on_listen_readable();
         const int64_t now = now_ms();
         uint64_t id = 0;
-        if (producer.take(&frame, &id)) {
+        bool changed = true;
+        if (producer.take(&frame, &id, &changed)) {
             /* The banner is read from the luma before the frame goes. */
             hud.sample(frame.data(), vc.tex_width, vc.tex_height, now);
-            feed.offer(&frame, id, now);
+            if (changed)
+                changed_ms = now;
+            if (send_gate.send(now, changed, feed.visible(), feed.needs_frame()))
+                feed.offer(&frame, id, now);
         }
         if (now - alt_read_ms >= 1000) {
             const AltScreen::State s = cfg.num("alt_screen_port") ? alt.read() : AltScreen::Unknown;
@@ -371,9 +418,12 @@ int serve(const Config &cfg)
         const bool live = liveness.live(alt_state, producer.last_frame_ms(), now);
         producer.set_live(live, now);
         feed.set_stream(live, producer.frozen(now), producer.picture(now));
+        const bool still = still_ms && (changed_ms < 0 || now - changed_ms >= still_ms);
+        producer.set_picture_interval_ms(feed.visible() && !still ? shown_interval_ms : hidden_interval_ms);
         feed.poll(now);
         /* Arrows only while Waze's stream is live and the map is on the map
          * target: the HUD shares its scene id with the panel. */
+        hud.set_stream(live && !producer.frozen(now), now);
         hud.set_active(server.hud_mode() == "arrows" && feed.target() == "map" && live && !producer.frozen(now) &&
                        producer.picture(now) == Picture::Shown, now);
         hb->poll(now);
@@ -391,13 +441,18 @@ int serve(const Config &cfg)
             StreamHealth::Minute sm;
             Backlog::Minute bm;
             uint64_t overflows = 0;
-            if (producer.minute(now, &m, &sm, &bm, &overflows))
-                log_info("waze: %u frames decoded in the last minute, %u without a picture to catch up, %u changed, "
+            if (producer.minute(now, &m, &sm, &bm, &overflows)) {
+                const uint64_t throttled = producer.throttled() - throttled_seen;
+                throttled_seen += throttled;
+                log_info("waze: %u frames decoded in the last minute, %u without a picture to catch up, %u above "
+                         "the picture rate, %u pictures (%llu unchanged held back so far), %u changed, "
                          "%u corrupted; the last picture is %s; %u losses (%u packets), %llu dropped by the receive "
                          "queue; packets waited %.1f ms on average, %lld ms at most",
-                         m.frames + bm.skipped, bm.skipped, m.changed, sm.corrupted, m.blank ? "blank" : "not blank",
+                         m.frames + bm.skipped + (unsigned)throttled, bm.skipped, (unsigned)throttled, m.frames,
+                         (unsigned long long)send_gate.held(), m.changed, sm.corrupted, m.blank ? "blank" : "not blank",
                          sm.losses, sm.lost, (unsigned long long)overflows, bm.wait_us.mean() / 1000.0,
                          (long long)(bm.wait_us.max / 1000));
+            }
             producer.track_keyframe_wait(now);
             const std::string detail = producer.stream_detail();
             if (producer.stream_lost() && detail != last_detail)
@@ -446,8 +501,8 @@ int run(const Config &cfg, const char *target)
     std::string start = "{\"cmd\":\"start\",\"target\":" + json_escape(target) + "}\n";
     if (t == "hud" || t == "hud-off" || t == "hud-video")
         start = "{\"cmd\":\"hud\",\"mode\":\"" + std::string(t == "hud" ? "arrows" : t == "hud-off" ? "off" : "video") + "\"}\n";
-    else if (t == "hud-dump")
-        start = "{\"cmd\":\"hud-dump\"}\n";
+    else if (t == "hud-dump" || t == "map-dump")
+        start = "{\"cmd\":\"" + t + "\"}\n";
     if (write(fd, start.data(), start.size()) != (ssize_t)start.size())
         return 1;
     char buf[1024];
@@ -471,7 +526,7 @@ bool load_local(Config *cfg, std::string *err)
 void usage()
 {
     std::fprintf(stderr,
-                 "usage: jap-waze-on-cluster [-c FILE] [-s key=value]... [run sail|map|panel|hud|hud-off|hud-video|hud-dump | bench-pack I420_FILE]\n");
+                 "usage: jap-waze-on-cluster [-c FILE] [-s key=value]... [run sail|map|panel|hud|hud-off|hud-video|hud-dump|map-dump | bench-pack I420_FILE]\n");
 }
 
 /* Times pan_blocks' packing (4:2:0 to RGB and the block fit) of each
@@ -546,6 +601,10 @@ void define_keys(Config *cfg)
     cfg->define("alt_screen_uid", "13002");
     cfg->define("target_fps", "30");
     cfg->define("pan_blocks", "1");
+    cfg->define("picture_fps", "15");
+    cfg->define("hidden_fps", "5");
+    cfg->define("keep_ms", "500");
+    cfg->define("still_ms", "1000");
     cfg->define("tex_level_bits", "2");
     cfg->define("target", "map");
     cfg->define("hide_bmw_guidance", "1");
@@ -558,6 +617,7 @@ void define_keys(Config *cfg)
     cfg->define("hud_card_icon_rect", "85x90+150+26");
     cfg->define("hud_card_dist_rect", "320x60+236+40");
     cfg->define("hud_card_plain_rect", "80x80+580+30");
+    cfg->define("hud_card_street_rect", "510x60+150+114");
     cfg->define("hud_card_roi", "580x220+120+0");
     cfg->define("hud_car_x", "544");
     cfg->define("hud_car_y", "360");
@@ -573,6 +633,16 @@ void define_keys(Config *cfg)
     cfg->define("hud_dump_flag", "/tmp/jap-woc-hud-dump");
     cfg->define("hud_dump_dir", "/tmp/jap-woc-hud");
     cfg->define("hud_dump_max", "200");
+    cfg->define("hud_bg_hold_s", "600");  /* hudguide's: the reckoned turn's safety cap */
+    cfg->define("hud_route_uv", "");      /* unset: route -1, hudguide never reckons */
+    cfg->define("hud_route_ymin", "0");
+    cfg->define("hud_route_min_px", "40");
+    cfg->define("hud_geo_uv", "152,190,28,90");   /* measured on the car's night frames, 2026-11-08 */
+    cfg->define("hud_route_bright_ymin", "150");
+    cfg->define("hud_label_uv", "156,168,76,90");
+    cfg->define("hud_geo_car_x", "541");
+    cfg->define("hud_geo_car_y", "250");
+    cfg->define("hud_geo_next", "0");   /* read by hudguide.js only */
     cfg->define("render_socket", "/dev/shm/cluster-render/render.sock");
     cfg->define("log_file", "/var/opt/jap-waze-on-cluster/log/jap-waze-on-cluster.log");
     cfg->define("log_file_kb", "512");

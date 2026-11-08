@@ -34,6 +34,7 @@
 #include "cluster_render/client.h"
 #include "hud_banner.h"
 #include "hud_maparrow.h"
+#include "hud_route.h"
 #include "screen_grab.h"
 
 namespace woc {
@@ -45,6 +46,14 @@ public:
     virtual void show(const Reading &r, int64_t now_ms) = 0;
     virtual int fd() const { return -1; }
     virtual bool wants_write() const { return false; }
+    /* Where the reading came from (card, hold, none), whether the arrows
+     * are on and the cluster stream is live and not frozen, the cluster
+     * map's arrow while no card shows, and Waze's route line on the map (1,
+     * 0, -1 unknown); only the native backend passes them on. */
+    virtual void context(const std::string &, bool, const std::string &, int, int64_t) {}
+    /* The route ahead on the cluster map (hud_route.h's geo_json), once a
+     * second while it is traced; only the native backend passes it on. */
+    virtual void geo(const std::string &, int64_t) {}
     virtual void poll(int64_t) {}
     /* One line for the diagnostics. */
     virtual std::string state() const = 0;
@@ -90,14 +99,21 @@ private:
 };
 
 /* BMW's own HUD guidance widget, as for Apple Maps and Google Maps: the
- * reading goes to `path` (JSON: maneuver, distance, at), rewritten on change
- * and every second, and the woc-hudguide service (patch/hudguide.js) sends it
- * to the navigation's ProjectedModeGuiding as carplay does for iAP2 route
- * guidance. An empty maneuver clears it. */
+ * reading goes to `path`, rewritten on change and every second, and the
+ * woc-hudguide service (patch/hudguide.js) sends it to the navigation's
+ * ProjectedModeGuiding as carplay does for iAP2 route guidance. An empty
+ * maneuver clears it. JSON (v2, v1's keys unchanged): maneuver, distance,
+ * street (only when read), source ("card", "hold", "none"), stream (1 while
+ * the arrows are on and the stream is live, else 0), map (the cluster map's
+ * arrow, "" while a card shows), route (1 Waze's route line on the map, 0
+ * none, -1 hud_route_uv unset), at, then geo (the route ahead traced on
+ * the map, hud_route.h's geo_json) once traced, card or not. */
 class NativeGuidanceHud : public HudBackend {
 public:
     explicit NativeGuidanceHud(const std::string &path = "/run/jap-waze-on-cluster/hud.json") : path_(path) {}
     void show(const Reading &r, int64_t now_ms) override;
+    void context(const std::string &source, bool stream, const std::string &map, int route, int64_t now_ms) override;
+    void geo(const std::string &json, int64_t) override { geo_ = json; }   /* the next write carries it */
     void poll(int64_t now_ms) override;
     std::string state() const override;
 
@@ -106,6 +122,9 @@ private:
 
     std::string path_;
     Reading want_;
+    std::string source_ = "none", map_, geo_;
+    bool stream_ = false;
+    int route_ = -1;
     int64_t written_ms_ = -1000000;
     unsigned writes_ = 0;
     bool failed_ = false;
@@ -120,10 +139,12 @@ struct HudConfig {
     Rect card_roi{120, 0, 580, 220};   /* what a dump keeps of the centre screen */
     ScreenGrabConfig grab;
     Rect icon{294, 80, 88, 88}, dist{390, 96, 200, 56}, roi{286, 72, 504, 368};
-    std::string templates_dir = "/var/opt/jap-waze-on-cluster/hud-templates";
+    std::string templates_dir = "/var/opt/jap-waze-on-cluster/hud-templates";   /* the card's str-*.pgm too */
     bool builtin_icons = false;
     float min_score = 0.6f;
     unsigned sample_ms = 400;
+    RouteBounds route;            /* hud_route_uv, hud_route_ymin, hud_route_min_px */
+    RouteTraceConfig geo;         /* hud_geo_uv (unset: no geo), hud_route_bright_ymin, hud_label_uv, hud_geo_car_x/y */
     unsigned stable = 2;
     std::string dump_flag = "/tmp/jap-woc-hud-dump";
     std::string dump_dir = "/tmp/jap-woc-hud";
@@ -136,22 +157,31 @@ public:
     /* Whether arrows may show now (the mode, the stream, the map's target);
      * off clears the HUD. */
     void set_active(bool on, int64_t now_ms);
-    /* The decoded frame's luma (w x h, the atlas's first plane), before it
-     * is handed to the map feed. */
+    /* Whether CarPlay's cluster stream is live and not frozen, for hud.json. */
+    void set_stream(bool live, int64_t now_ms);
+    /* The decoded frame's 4:2:0 atlas (yuv_atlas.h: w x h luma, then the
+     * chroma), before it is handed to the map feed. */
     void sample(const uint8_t *y, unsigned w, unsigned h, int64_t now_ms);
     /* Dumps the next n samples' crops as PNG (the flag file does too). */
     void arm_dump(unsigned n) { dump_left_ = n; dumped_ = 0; }
+    /* The next frame's atlas to the dump folder (run map-dump), for the route's colour. */
+    void arm_map_dump() { map_dump_ = true; }
     HudBackend *backend() { return backend_.get(); }
     std::string report() const;
 
 private:
     void dump(const uint8_t *y, unsigned w, unsigned h, const Reading &r, int64_t now_ms);
+    void trace(const uint8_t *atlas, unsigned w, unsigned h, int64_t now_ms);
 
     HudConfig cfg_;
     Templates templates_;
     Recogniser rec_;
     MapArrowReader map_;
-    Templates card_tpl_;
+    RouteTrace geo_;
+    GeoReading geo_last_;
+    int64_t geo_found_ms_ = -1000000, near_ms_ = -1000000;
+    int near_arc_ = 0;
+    Templates card_tpl_, street_tpl_;
     std::unique_ptr<CardReader> card_;
     std::unique_ptr<ScreenGrab> grab_;
     std::vector<uint8_t> scr_;
@@ -161,10 +191,17 @@ private:
     void load_card_templates();
     Debounce debounce_;
     CardHold hold_;
+    StreetHold street_;
+    std::string map_hint_, source_ = "none";
+    bool stream_ = false, map_dump_ = false;
+    int route_ = -1;
+    int64_t route_ms_ = -1000000, map_ms_ = -1000000, card_seen_ms_ = -1000000000;
+    void push_context(int64_t now_ms);
     std::unique_ptr<HudBackend> backend_;
     bool active_ = false;
     int64_t last_sample_ms_ = -1000000, flag_checked_ms_ = -1000000, last_dump_ms_ = -1000000;
-    unsigned dump_left_ = 0, dumped_ = 0;
+    unsigned dump_left_ = 0, dumped_ = 0, map_dumped_ = 0;
+    int64_t last_map_dump_ms_ = -1000000;
     bool flag_ = false;
     Reading last_read_;
 };

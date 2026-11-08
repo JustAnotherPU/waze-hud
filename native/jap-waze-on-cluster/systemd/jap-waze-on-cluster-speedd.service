@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 JustAnotherPU
+[Unit]
+Description=jap-waze-on-cluster vehicle speed: Vehicle2's speed to /run/jap-waze-on-cluster/speed.json, for the HUD turn kept while CarPlay is hidden
+RequiresMountsFor=/var/opt
+# Dormant while robertnisipeanu's waze-on-cluster is installed (patch/conflict.js).
+ConditionPathExists=!/var/opt/waze-on-cluster/current/component.json
+After=local-fs.target jap-waze-on-cluster.service
+# A start that fails (no Vehicle2, a changed interface file) is retried
+# every 30 s, at most 5 times in 10 min, then left failed.
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+# Vehicle2 answers hmi_5000 and refuses cia_13002, hudguide's user (VERIFIED
+# on the car), so this is a unit of its own, as the map's user. It writes
+# into the map service's runtime folder; while that is gone the writes fail
+# and hudguide sees no speed (README.md "HUD arrows").
+User=hmi_5000
+Group=hmi_5000
+ExecStart=/usr/bin/node /var/opt/jap-waze-on-cluster/current/speedd.js
+Restart=on-failure
+RestartSec=30
+NoNewPrivileges=yes
+TimeoutStopSec=10
+Nice=10
+CPUQuota=20%
+MemoryLimit=64M
+TasksMax=16
+LimitCORE=1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

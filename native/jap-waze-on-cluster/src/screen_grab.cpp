@@ -132,6 +132,10 @@ void ScreenGrab::run()
 {
     const size_t frame = (size_t)c_.w * c_.h * 4;
     std::vector<uint8_t> buf(frame), y((size_t)c_.w * c_.h);
+    const bool whole = !c_.crop_w || !c_.crop_h;
+    const unsigned x0 = whole ? 0 : std::min(c_.crop_x, c_.w), y0 = whole ? 0 : std::min(c_.crop_y, c_.h);
+    const unsigned x1 = whole ? c_.w : std::min(c_.crop_x + c_.crop_w, c_.w);
+    const unsigned y1 = whole ? c_.h : std::min(c_.crop_y + c_.crop_h, c_.h);
     int fd = -1;
     size_t got = 0;
     int64_t retry_ms = 0;
@@ -196,9 +200,10 @@ void ScreenGrab::run()
         if (got < frame)
             continue;
         got = 0;
-        /* BGRA (checked on the unit) to luma, BT.601 */
-        for (size_t i = 0, j = 0; j < y.size(); i += 4, j++)
-            y[j] = (uint8_t)((buf[i + 2] * 77 + buf[i + 1] * 150 + buf[i] * 29) >> 8);
+        /* BGRA (checked on the unit) to luma, BT.601, in the crop only */
+        for (unsigned r = y0; r < y1; r++)
+            for (size_t j = (size_t)r * c_.w + x0, e = (size_t)r * c_.w + x1, i = j * 4; j < e; i += 4, j++)
+                y[j] = (uint8_t)((buf[i + 2] * 77 + buf[i + 1] * 150 + buf[i] * 29) >> 8);
         std::lock_guard<std::mutex> l(mu_);
         y_.swap(y);
         if (y.size() != y_.size())

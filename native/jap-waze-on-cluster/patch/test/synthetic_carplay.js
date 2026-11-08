@@ -7,13 +7,15 @@
  * setStreamStatus, requestStream (and a direct caller) and onSuggestUi with
  * their name strings, and the ICSafeAreaProvider constructor with its
  * IC_HIGH/IC_MID checks, two geometry builders and a caller reading the
- * geometry through its getters, plus program headers, a build-id note, an
+ * geometry through its getters, the maxFPS getter of a constant and its two
+ * loads (the IC display's in that caller, the main display's beside it), each
+ * followed by a uuid getter's call, plus program headers, a build-id note, an
  * .eh_frame_hdr search table and, with relocSink, a dynamic relocation over
  * the sink slot. Code and data sit in two segments whose
  * addresses differ from their file offsets by different amounts.
  *
  *   build({ pad, codeVa, dataVa, dataAt, highViaJne, midFirst, twoSinks,
- *           twoConverters, noEhFrame, relocSink })
+ *           twoConverters, noEhFrame, relocSink, twoIcFps })
  *     -> { buf, at: the offsets and values the locator should report }
  */
 'use strict';
@@ -113,7 +115,17 @@ function build(o) {
     var getters = [['g18', [0x48, 0x8b, 0x47, 0x18]], ['g20', [0x0f, 0xb7, 0x47, 0x20]], ['g22', [0x0f, 0xb7, 0x47, 0x22]],
         ['g24', [0x48, 0x8b, 0x47, 0x24]], ['g2c', [0x0f, 0xb7, 0x47, 0x2c]], ['g2e', [0x0f, 0xb7, 0x47, 0x2e]]];
     getters.forEach(function (g) { fn(g[0]); b.apply(null, g[1].concat([0xc3])); });
-    fn('info'); call('ctor'); getters.forEach(function (g) { b(0x48, 0x89, 0xdf); call(g[0]); }); b(0xc3);
+    /* the maxFPS getter, the uuid getters, and the displays' maxFPS loads:
+     * call ; mov eax,[rax] ; mov [rbp+disp32],eax ; call uuid */
+    fn('fps'); b(0x48, 0x83, 0xec, 0x18); lea(0x48, 0x05, 'fps.value'); b(0x48, 0x83, 0xc4, 0x18, 0xc3);
+    fn('uuidMain'); lea(0x48, 0x05, 's.uuidMain'); b(0xc3);
+    fn('uuidIc'); lea(0x48, 0x05, 's.uuidIc'); b(0xc3);
+    function fpsLoad(name, disp, uuid) { label(name); call('fps'); b(0x8b, 0x00, 0x89, 0x85); u32(disp); call(uuid); }
+    fn('mainDisplay'); fpsLoad('main.fps', -0x1b0, 'uuidMain'); b(0xc3);
+    fn('info'); call('ctor'); getters.forEach(function (g) { b(0x48, 0x89, 0xdf); call(g[0]); });
+    fpsLoad('info.fps', -0x1c8, 'uuidIc');
+    if (o.twoIcFps) fpsLoad('info.fps2', -0x1cc, 'uuidIc');
+    b(0xc3);
     if (pc > DATA) throw new Error('synthetic code overruns its segment');
 
     str('s.ss', 'void carplay::navi_handler::AlternateDisplays::setStreamStatus(const StreamStatus&)');
@@ -124,6 +136,9 @@ function build(o) {
     str('s.ctor', 'base::config::ICSafeAreaProvider::ICSafeAreaProvider(const pmcommon::coding::KombiVariant::Values&)');
     str('s.conv', 'bool pmcommon::coding::codingToInternal(const CodingKOMBI_HUD::eKI_KOMBI_VARIANT&, pmcommon::coding::KombiVariant::Values&)');
     str('s.other', 'source');
+    str('s.uuidMain', 'main-display-uuid');
+    str('s.uuidIc', 'ic-display-uuid');
+    pd = (pd + 3) & ~3; labels['fps.value'] = pd; buf.writeUInt32LE(60, pd); pd += 4;
     str('s.decoy', 'mCarPlay->GetDisplaySource(videoSource, uiid)');
     for (var n = 0; n < (o.twoSinks ? 2 : 1); n++) {
         str('s.before' + n, 'checkError().');
@@ -175,7 +190,7 @@ function build(o) {
     });
 
     function slot(i) { return buf.readUInt32LE(labels['conv.table'] + i * 4); }
-    function callTo(t) { var r = Buffer.alloc(4); r.writeInt32LE(va(labels[t]) - va(labels.call + 5), 0); return 'e8' + r.toString('hex'); }
+    function callTo(t, from) { var r = Buffer.alloc(4); r.writeInt32LE(va(labels[t]) - va((from || labels.call) + 5), 0); return 'e8' + r.toString('hex'); }
     return {
         buf: buf,
         at: {
@@ -187,6 +202,8 @@ function build(o) {
             callOriginal: callTo('ss'), callPatched: callTo('rs'),
             builder: labels.high, mm: labels['high.mm'], px: labels['high.px'], safe1: labels['high.safe1'], safe2: labels['high.safe2'],
             stock: STOCK_HIGH,
+            fps: labels['info.fps'], fpsGetter: labels.fps, fpsMain: labels['main.fps'], fpsBuilder: labels.info, fpsConst: labels['fps.value'],
+            fpsOriginal: callTo('fps', labels['info.fps']) + '8b00',
         },
     };
 }

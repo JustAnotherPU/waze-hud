@@ -1,6 +1,6 @@
 # The carplay patch, byte for byte
 
-Four reversible edits to `/usr/bin/carplay` let jap-waze-on-cluster receive the
+Five reversible edits to `/usr/bin/carplay` let jap-waze-on-cluster receive the
 CarPlay instrument-cluster map, at the size it displays, on a head unit coded
 `KI_KOMBI_VARIANT` 7. `carplay_patch.js` applies, verifies and reverts them;
 `patchd.js` runs it for the app and the install hooks, `woc-patch.sh` from a
@@ -8,7 +8,7 @@ shell.
 
 ## Builds
 
-`carplay_locate.js` finds the four edit sites in each build by its code and
+`carplay_locate.js` finds the five edit sites in each build by its code and
 data, as each edit's "Found by" says, so the patch applies to any build in
 which every site is found exactly once and passes its checks. A build where a
 site is missing, found more than once or fails a check is not patchable; the
@@ -28,9 +28,9 @@ and `patchable: yes` or `no` with every reason; it never writes.
 
 **Proven builds**, listed by build-id in `carplay_patch.js`: the first edit
 needs the whole file to be the shipped one, and any other content reads as
-modified by something else. Another build counts as pristine when all four
+modified by something else. Another build counts as pristine when all five
 sites read stock, but its first edit needs `apply --unproven`: its sites pass
-every check, yet no car has run it patched, and two edits run at every
+every check, yet no car has run it patched, and three edits run at every
 CarPlay start (below). `patchd` reports such a build without our backup as
 the conflict `untested carplay build`, so an install leaves it as it is, and
 Enable map applies it with `--unproven`. Once our backup exists, later applies
@@ -39,7 +39,8 @@ and installs patch it like a proven build.
 **At CarPlay start**, with or without a phone, `ApplicationPrivate::start()`
 builds the CarPlay info: it converts the variant (Edit 1), constructs
 `ICSafeAreaProvider` from it, reads the IC_HIGH geometry through its getters
-(Edit 4) and hands it to `mCarPlay->SetInitialInfoResponse(…)`, whose result
+(Edit 4) and the IC display's frame rate (Edit 5) and hands them to
+`mCarPlay->SetInitialInfoResponse(…)`, whose result
 check throws on an error. A build whose Cinemo rejects the geometry, or whose
 IC_HIGH start path needs more than a variant-7 car has, fails there at every
 start. Edit 3 runs only on the phone's `onSuggestUi` event, Edit 2 only when
@@ -275,6 +276,45 @@ full` the whole frame; `--res` scales the default. `patchd` reports `res` and
 `safe`, and the app offers Enable map when either differs from the default.
 A high-panel binary with stock geometry reads as partially patched.
 
+## Edit 5 — fps (the cluster display's frame rate)
+
+Both displays CarPlay announces, the main one and the IC display, read their
+`maxFPS` through one getter of a shared u32 constant (60), so the phone may
+send the cluster stream at up to 60 fps (about 22 to 30 in practice). The
+cluster shows the map at most `picture_fps` (15) a second, so the rest only
+costs decoding. Edit 5 makes the IC display ask for at most 15 fps: in the
+function that builds the IC display info (`0x2078b0`), the 7 bytes at
+`0x207a24`, `call getter ; mov eax,[rax]`, become `mov eax,15 ; xchg ax,ax`
+(a 2-byte nop). The `mov [rbp+disp32],eax` that follows is unchanged. The
+main display's load (`0x2076e7`) and the constant (`0x2a2c50`) are never
+written.
+
+| | at | stock | patched (default) |
+|---|---|---|---|
+| IC display maxFPS load | `0x207a24` | `e8776bff ff8b00` (`call 0x1fe5a0 ; mov eax,[rax]`) | `b80f0000 006690` (`mov eax,15 ; xchg ax,ax`) |
+
+`--fps N` (1 to 60) writes another rate, `--fps stock` and `--panel mid` the
+backup's stock load. The rate is negotiated at phone connection, so it
+applies from the next CarPlay session after CarPlay restarts. On the car
+(carplay 22.28.3) the stream came at about 15.6 fps with no corrupt picture,
+and the decode went from 41 % to 16 % of a core.
+
+**Found by** the IC display builder of Edit 4: the one caller of the
+`ICSafeAreaProvider` constructor that reads its geometry through the
+getters. Every `call rel32 ; mov eax,[rax] ; mov [rbp+disp32],eax` in the
+code whose callee is a short function (at most 0x40 bytes) with one `lea
+rax,[rip+d32]` to a u32 in the file is a `maxFPS` load. There must be exactly
+one such getter, called only from those loads; exactly one load (stock, or
+this patch's `mov eax,imm32 ; xchg ax,ax`) inside the IC display builder,
+followed by the call to the IC display's uuid getter (another such address
+getter); exactly one other load (the main display's); and a constant from 1
+to 240.
+
+A patch from before this edit (four edits, the stock load) still reads as
+enabled: `verify` passes and `patchd` reports `fps` null. `activate` and
+Enable map then add only this edit. The fps edit without the others reads as
+partially patched.
+
 ## Activation
 
 The running CarPlay keeps its old binary until it next starts. A `systemctl
@@ -403,10 +443,10 @@ same build as the target (size, build-id and every site). The stock geometry
 `revert` needs no locator to trust the backup: its SHA-256 and GNU build-id
 must be the recorded ones (each when recorded). The target is the backup's
 build when both have the same build-id and size, or, when either has no
-build-id, the same size and at most 200 bytes apart (twice the edits'
+build-id, the same size and at most 214 bytes apart (twice the edits'
 bytes). When the locator recognises the target and the backup as the same
 build, `revert` restores only the edits' regions, so another tool's change
-elsewhere stays, and confirms all four edits read original. Otherwise, over
+elsewhere stays, and confirms all five edits read original. Otherwise, over
 the backup's build, it writes the whole backup: that undoes a patch any
 version of this tool wrote, also one whose sites the locator now refuses.
 Over another build (a firmware update) it refuses; `revert --force` writes

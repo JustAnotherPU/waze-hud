@@ -8,8 +8,8 @@ their original copyright and license headers; files JustAnotherPU added
 carry their own.
 
 This file is the prominent notice required by section 5(a) of the GNU GPL
-version 3: JustAnotherPU modified the 95 files listed below (24 added, 71
-changed), dated 2026-11-04.
+version 3: JustAnotherPU modified the 114 files listed below (38 added, 76
+changed), dated 2026-11-04 to 2026-11-08.
 
 What changed, in short:
 
@@ -24,6 +24,10 @@ What changed, in short:
   "Waze HUD").
 - A guard against the original Waze on cluster (patch/conflict.js): dormant
   while it is installed, a pop-up in the app to remove it or cancel.
+- Since 2026-11-08 (jap-waze-on-cluster 1.2.0): a fifth carplay edit that
+  caps the cluster display at 15 frames a second, the street name on the
+  HUD, the turn kept while CarPlay is hidden (vehicle speed from a small
+  speedd service), and the route ahead traced on the cluster map.
 - cluster-render is kept unmodified, to build against only; it is not
   published from here.
 
@@ -31,8 +35,10 @@ Files added:
   native/jap-waze-on-cluster/patch/conflict.js
   native/jap-waze-on-cluster/patch/hudguide.js
   native/jap-waze-on-cluster/patch/pmg_schema.js
+  native/jap-waze-on-cluster/patch/speedd.js
   native/jap-waze-on-cluster/patch/test/conflict_test.js
   native/jap-waze-on-cluster/patch/test/hudguide_test.js
+  native/jap-waze-on-cluster/patch/test/speedd_test.js
   native/jap-waze-on-cluster/src/hud_arrows.cpp
   native/jap-waze-on-cluster/src/hud_arrows.h
   native/jap-waze-on-cluster/src/hud_banner.cpp
@@ -41,16 +47,28 @@ Files added:
   native/jap-waze-on-cluster/src/hud_draw.h
   native/jap-waze-on-cluster/src/hud_maparrow.cpp
   native/jap-waze-on-cluster/src/hud_maparrow.h
+  native/jap-waze-on-cluster/src/hud_route.cpp
+  native/jap-waze-on-cluster/src/hud_route.h
   native/jap-waze-on-cluster/src/screen_grab.cpp
   native/jap-waze-on-cluster/src/screen_grab.h
+  native/jap-waze-on-cluster/src/send_gate.h
   native/jap-waze-on-cluster/systemd/jap-waze-on-cluster-hudguide.service
+  native/jap-waze-on-cluster/systemd/jap-waze-on-cluster-speedd.service
   native/jap-waze-on-cluster/test/data/carplay-card-30m.pgm
+  native/jap-waze-on-cluster/test/data/carplay-card-450m-shield.pgm
+  native/jap-waze-on-cluster/test/data/map-route-left.yuv
+  native/jap-waze-on-cluster/test/data/map-route-none.yuv
+  native/jap-waze-on-cluster/test/data/map-route-right.yuv
+  native/jap-waze-on-cluster/test/data/map-route-short.yuv
   native/jap-waze-on-cluster/test/data/waze-map-right.pgm
   native/jap-waze-on-cluster/test/hud_banner_test.cpp
   native/jap-waze-on-cluster/test/hud_feed_test.cpp
   native/jap-waze-on-cluster/test/hud_maparrow_test.cpp
+  native/jap-waze-on-cluster/test/hud_route_test.cpp
+  native/jap-waze-on-cluster/test/send_gate_test.cpp
   native/jap-waze-on-cluster/tools/hud_font_templates.py
   native/jap-waze-on-cluster/tools/hud_templates.py
+  native/jap-waze-on-cluster/tools/route_calibrate.py
   release/repo.json
 
 Files modified (old path -> new path where moved):
@@ -79,6 +97,7 @@ Files modified (old path -> new path where moved):
   native/waze-on-cluster/patch/PATCH.md -> native/jap-waze-on-cluster/patch/PATCH.md
   native/waze-on-cluster/patch/aapd_conf.js -> native/jap-waze-on-cluster/patch/aapd_conf.js
   native/waze-on-cluster/patch/aapd_patch.js -> native/jap-waze-on-cluster/patch/aapd_patch.js
+  native/waze-on-cluster/patch/carplay_locate.js -> native/jap-waze-on-cluster/patch/carplay_locate.js
   native/waze-on-cluster/patch/carplay_patch.js -> native/jap-waze-on-cluster/patch/carplay_patch.js
   native/waze-on-cluster/patch/dlt_capture.js -> native/jap-waze-on-cluster/patch/dlt_capture.js
   native/waze-on-cluster/patch/journal_keep.js -> native/jap-waze-on-cluster/patch/journal_keep.js
@@ -89,6 +108,7 @@ Files modified (old path -> new path where moved):
   native/waze-on-cluster/patch/remount_lock.js -> native/jap-waze-on-cluster/patch/remount_lock.js
   native/waze-on-cluster/patch/shutdown_mark.sh -> native/jap-waze-on-cluster/patch/shutdown_mark.sh
   native/waze-on-cluster/patch/test/aapd_test.js -> native/jap-waze-on-cluster/patch/test/aapd_test.js
+  native/waze-on-cluster/patch/test/carplay_mutations.js -> native/jap-waze-on-cluster/patch/test/carplay_mutations.js
   native/waze-on-cluster/patch/test/firmware/capture_test.js -> native/jap-waze-on-cluster/patch/test/firmware/capture_test.js
   native/waze-on-cluster/patch/test/journal_keep_test.js -> native/jap-waze-on-cluster/patch/test/journal_keep_test.js
   native/waze-on-cluster/patch/test/locate_test.js -> native/jap-waze-on-cluster/patch/test/locate_test.js
@@ -97,6 +117,7 @@ Files modified (old path -> new path where moved):
   native/waze-on-cluster/patch/test/patchd_activate_test.js -> native/jap-waze-on-cluster/patch/test/patchd_activate_test.js
   native/waze-on-cluster/patch/test/patchd_patch_test.js -> native/jap-waze-on-cluster/patch/test/patchd_patch_test.js
   native/waze-on-cluster/patch/test/recovery_test.js -> native/jap-waze-on-cluster/patch/test/recovery_test.js
+  native/waze-on-cluster/patch/test/synthetic_carplay.js -> native/jap-waze-on-cluster/patch/test/synthetic_carplay.js
   native/waze-on-cluster/patch/test/undo_test.js -> native/jap-waze-on-cluster/patch/test/undo_test.js
   native/waze-on-cluster/patch/test/units_test.js -> native/jap-waze-on-cluster/patch/test/units_test.js
   native/waze-on-cluster/patch/woc-patch.sh -> native/jap-waze-on-cluster/patch/woc-patch.sh
@@ -105,6 +126,8 @@ Files modified (old path -> new path where moved):
   native/waze-on-cluster/src/main.cpp -> native/jap-waze-on-cluster/src/main.cpp
   native/waze-on-cluster/src/map_feed.cpp -> native/jap-waze-on-cluster/src/map_feed.cpp
   native/waze-on-cluster/src/map_feed.h -> native/jap-waze-on-cluster/src/map_feed.h
+  native/waze-on-cluster/src/video_producer.cpp -> native/jap-waze-on-cluster/src/video_producer.cpp
+  native/waze-on-cluster/src/video_producer.h -> native/jap-waze-on-cluster/src/video_producer.h
   native/waze-on-cluster/systemd/carplay.service.d/50-waze-on-cluster.conf -> native/jap-waze-on-cluster/systemd/carplay.service.d/50-jap-waze-on-cluster.conf
   native/waze-on-cluster/systemd/var-opt-ro.service.d/50-waze-on-cluster.conf -> native/jap-waze-on-cluster/systemd/var-opt-ro.service.d/50-jap-waze-on-cluster.conf
   native/waze-on-cluster/systemd/waze-on-cluster-aa-boot.service -> native/jap-waze-on-cluster/systemd/jap-waze-on-cluster-aa-boot.service

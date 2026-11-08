@@ -5,8 +5,9 @@
  * located sites are the documented ones, the proven build's SHA gate, variant
  * apply (high and mid), the sink redirect, the self-start call retarget, the
  * resolution geometry and safe-area rewrite, region-bounded diffs, idempotence,
- * verify, partial patches, byte-exact revert of all four edits, a build not in
- * the proven list, and a read-only probe. Without CARPLAY_BIN it skips.
+ * the IC display's frame rate (and a four-edit patch of an earlier release
+ * gaining it), verify, partial patches, byte-exact revert of all five edits, a
+ * build not in the proven list, and a read-only probe. Without CARPLAY_BIN it skips.
  *
  *   node patch_test.js
  */
@@ -37,6 +38,10 @@ var RES_DEFAULT = ['48ba8a0000003d000000', '48b840040000e0010000', '48b800000000
 /* The same size with the safe area the whole frame (--safe full). */
 var RES_FULLSAFE = ['48ba8a0000003d000000', '48b840040000e0010000', '48b80000000040040000', '48b8e001000000000000'];
 function inResRegion(x) { return RES_OFFS.some(function (o) { return x >= o + 2 && x < o + 10; }); }
+/* Edit 5 (fps): the IC display's 7-byte maxFPS load (call getter ; mov eax,[rax]). */
+var FPS = 0x207a24, FPS_STOCK = 'e8776bffff8b00', FPS_15 = 'b80f0000006690';
+function fpsBytes(buf) { return buf.slice(FPS, FPS + 7).toString('hex'); }
+function inFpsRegion(x) { return x >= FPS && x < FPS + 7; }
 /* Build an "older patch" binary: variant + sink applied, self-start still stock
  * (what the car runs today). Patches the bytes directly, bypassing the patcher. */
 function makeEdit12Only(panel, sinkUrl) {
@@ -71,35 +76,38 @@ try {
     var r;
     r = run(['status', '--target', tgt]);
     ok('status: pristine, variant ORIGINAL, sink ORIGINAL, selfstart ORIGINAL, res ORIGINAL',
-        /variant:\s+ORIGINAL/.test(r.out) && /sink:\s+ORIGINAL/.test(r.out) && /selfstart:\s+ORIGINAL/.test(r.out) && /res:\s+ORIGINAL \(IC_HIGH advertises 1920x900\)/.test(r.out) && /pristine/.test(r.out), r.out);
+        /variant:\s+ORIGINAL/.test(r.out) && /sink:\s+ORIGINAL/.test(r.out) && /selfstart:\s+ORIGINAL/.test(r.out) && /res:\s+ORIGINAL \(IC_HIGH advertises 1920x900\)/.test(r.out) && /pristine/.test(r.out) &&
+        /fps:\s+ORIGINAL \(the phone may send the cluster up to 60 fps\)/.test(r.out), r.out);
     ok('status: proven, version 22.28.3', /proven:\s+yes/.test(r.out) && /version:\s+22\.28\.3/.test(r.out), r.out);
     ok('stock res immediates are the proven ones', JSON.stringify(resImmediates(SRCBUF)) === JSON.stringify(RES_STOCK), JSON.stringify(resImmediates(SRCBUF)));
 
     r = run(['verify', '--target', tgt]);
-    ok('verify: original exits 0, self-start off, res stock', r.code === 0 && /variant original, sink original \(AVB 15\), self-start off, res stock/.test(r.out), r.out);
+    ok('verify: original exits 0, self-start off, res stock', r.code === 0 && /variant original, sink original \(AVB 15\), self-start off, res stock, fps stock$/m.test(r.out), r.out);
 
     r = run(['apply', '--target', tgt, '--panel', 'high']);
     ok('apply without --yes refuses', r.code !== 0 && /--yes/.test(r.out) && sha256(tgt) === ORIG_SHA, r.out);
 
     /* avb mode: variant + self-start + resolution, stock sink (no --sink/--capture) */
     r = run(['apply', '--target', tgt, '--panel', 'high', '--yes']);
-    ok('apply high (avb mode) succeeds', r.code === 0 && /patched OK/.test(r.out) && /self-start -> requestStream/.test(r.out) && /resolution -> 1088x480 at 138x61mm/.test(r.out), r.out);
+    ok('apply high (avb mode) succeeds', r.code === 0 && /patched OK/.test(r.out) && /self-start -> requestStream/.test(r.out) && /resolution -> 1088x480 at 138x61mm/.test(r.out) && /fps -> 15/.test(r.out), r.out);
     ok('backup is pristine', sha256(tgt + '.jap-orig') === ORIG_SHA);
     var d = diffs(SRCBUF, fs.readFileSync(tgt));
-    ok('avb-mode diff stays in the slot, the call rel32 and the res immediates', d.length >= 2 &&
-        d.every(function (x) { return (x >= SLOT && x < SLOT + 4) || (x >= CALL && x < CALL + CALL_LEN) || inResRegion(x); }),
+    ok('avb-mode diff stays in the slot, the call rel32, the res immediates and the fps load', d.length >= 2 &&
+        d.every(function (x) { return (x >= SLOT && x < SLOT + 4) || (x >= CALL && x < CALL + CALL_LEN) || inResRegion(x) || inFpsRegion(x); }),
         JSON.stringify(d.map(function (x){return '0x'+x.toString(16);})));
     ok('slot = IC_HIGH (bcf2f7ff)', fs.readFileSync(tgt).slice(SLOT, SLOT + 4).toString('hex') === 'bcf2f7ff');
     ok('call retargeted to requestStream', callBytes(fs.readFileSync(tgt)) === CALL_SELF, callBytes(fs.readFileSync(tgt)));
+    ok('fps load is mov eax,15 ; nop', fpsBytes(fs.readFileSync(tgt)) === FPS_15, fpsBytes(fs.readFileSync(tgt)));
     ok('res immediates advertise 1088x480 at 138x61mm, safe 504x228 at 286,72',
         JSON.stringify(resImmediates(fs.readFileSync(tgt))) === JSON.stringify(RES_DEFAULT), JSON.stringify(resImmediates(fs.readFileSync(tgt))));
     r = run(['status', '--target', tgt]);
     ok('status: avb mode is SELF-START + sink ORIGINAL + res PATCHED', /selfstart:\s+SELF-START/.test(r.out) && /sink:\s+ORIGINAL/.test(r.out) && /res:\s+PATCHED \(IC_HIGH advertises 1088x480 at 138x61mm, safe 504x228 at 286,72\)/.test(r.out), r.out);
     r = run(['verify', '--target', tgt]);
-    ok('verify: high avb exits 0 with res 1088x480', r.code === 0 && /res 1088x480/.test(r.out), r.out);
+    ok('verify: high avb exits 0 with res 1088x480, fps 15', r.code === 0 && /res 1088x480, fps 15$/m.test(r.out), r.out);
 
     r = run(['revert', '--target', tgt, '--yes']);
-    ok('revert restores byte-exact original (all four edits)', r.code === 0 && sha256(tgt) === ORIG_SHA && callBytes(fs.readFileSync(tgt)) === CALL_STOCK &&
+    ok('revert restores byte-exact original (all five edits)', r.code === 0 && sha256(tgt) === ORIG_SHA && callBytes(fs.readFileSync(tgt)) === CALL_STOCK &&
+        fpsBytes(fs.readFileSync(tgt)) === FPS_STOCK &&
         JSON.stringify(resImmediates(fs.readFileSync(tgt))) === JSON.stringify(RES_STOCK));
 
     /* variant + capture together */
@@ -252,11 +260,11 @@ try {
     ok('edit-1/2-only: verify FAILS as partially patched', r.code !== 0 && /partially patched/.test(r.out), r.out);
     var e12buf = fs.readFileSync(e12);
     r = run(['apply', '--target', e12, '--panel', 'high', '--sink', 'udp://127.0.0.1:20557?mime_type=video/H264', '--yes']);
-    ok('edit-1/2-only: Enable applies self-start and resolution (not "nothing to do")', r.code === 0 && /self-start -> requestStream/.test(r.out) && /resolution -> 1088x480/.test(r.out) && !/nothing to do/.test(r.out), r.out);
+    ok('edit-1/2-only: Enable applies self-start, resolution and fps (not "nothing to do")', r.code === 0 && /self-start -> requestStream/.test(r.out) && /resolution -> 1088x480/.test(r.out) && /fps -> 15/.test(r.out) && !/nothing to do/.test(r.out), r.out);
     var e12now = fs.readFileSync(e12);
     var d3 = diffs(e12buf, e12now);
-    ok('edit-1/2-only: Enable changed only the call rel32 and the res immediates', d3.length >= 1 &&
-        d3.every(function (x) { return (x >= CALL && x < CALL + CALL_LEN) || inResRegion(x); }), JSON.stringify(d3.map(function (x){return '0x'+x.toString(16);})));
+    ok('edit-1/2-only: Enable changed only the call rel32, the res immediates and the fps load', d3.length >= 1 &&
+        d3.every(function (x) { return (x >= CALL && x < CALL + CALL_LEN) || inResRegion(x) || inFpsRegion(x); }), JSON.stringify(d3.map(function (x){return '0x'+x.toString(16);})));
     ok('edit-1/2-only: now SELF-START, variant+sink unchanged', callBytes(e12now) === CALL_SELF && e12now.slice(SLOT, SLOT + 4).toString('hex') === 'bcf2f7ff');
     r = run(['verify', '--target', e12]);
     ok('edit-1/2-only: verify now passes', r.code === 0 && /self-start on/.test(r.out), r.out);
@@ -289,7 +297,8 @@ try {
     /* Panel switch high -> mid restores the stock geometry, and a custom
      * --res lands in the immediates at the same physical size. */
     r = run(['apply', '--target', e123, '--panel', 'mid', '--yes']);
-    ok('high->mid restores stock resolution', r.code === 0 && /resolution -> stock 1920x900/.test(r.out) &&
+    ok('high->mid restores stock resolution and fps', r.code === 0 && /resolution -> stock 1920x900/.test(r.out) && /fps -> stock 60/.test(r.out) &&
+        fpsBytes(fs.readFileSync(e123)) === FPS_STOCK &&
         JSON.stringify(resImmediates(fs.readFileSync(e123))) === JSON.stringify(RES_STOCK), r.out);
     r = run(['apply', '--target', e123, '--panel', 'high', '--res', '800x360', '--yes']);
     ok('custom --res 800x360 applies at 138x61mm', r.code === 0 && /resolution -> 800x360 at 138x61mm/.test(r.out), r.out);
@@ -314,6 +323,28 @@ try {
     ok('--res without a value refused, no change', r.code !== 0 && /--res needs/.test(r.out) && sha256(e123) === e123sha, r.out);
     r = run(['revert', '--target', e123, '--yes']);
     ok('revert after res edits restores byte-exact stock', r.code === 0 && sha256(e123) === ORIG_SHA);
+
+    /* A patch an earlier release wrote (four edits, the stock fps load, what
+     * the car runs today): enabled, and Enable adds only the fps edit; the
+     * revert takes all five back. */
+    var e1234 = path.join(dir, 'carplay_edit1234');
+    fs.writeFileSync(e1234, SRCBUF);
+    run(['apply', '--target', e1234, '--panel', 'high', '--yes']);
+    var b1234 = Buffer.from(fs.readFileSync(e1234));
+    Buffer.from(FPS_STOCK, 'hex').copy(b1234, FPS);
+    fs.writeFileSync(e1234, b1234);
+    r = run(['verify', '--target', e1234]);
+    ok('four-edit patch: verify passes, fps stock', r.code === 0 && /res 1088x480, fps stock$/m.test(r.out), r.out);
+    r = run(['status', '--target', e1234]);
+    ok('four-edit patch: status known, fps ORIGINAL', /known:\s+yes, modified build/.test(r.out) && /fps:\s+ORIGINAL/.test(r.out), r.out);
+    r = run(['apply', '--target', e1234, '--panel', 'high', '--yes']);
+    var d6 = diffs(b1234, fs.readFileSync(e1234));
+    ok('four-edit patch: Enable adds only the fps edit', r.code === 0 && /About to patch [^\n]*\n  fps -> 15\npatched OK/.test(r.out) &&
+        d6.length >= 1 && d6.every(inFpsRegion) && fpsBytes(fs.readFileSync(e1234)) === FPS_15, r.out);
+    r = run(['apply', '--target', e1234, '--panel', 'high', '--fps', 'stock', '--yes']);
+    ok('--fps stock writes the stock load back', r.code === 0 && fpsBytes(fs.readFileSync(e1234)) === FPS_STOCK, r.out);
+    r = run(['revert', '--target', e1234, '--yes']);
+    ok('four-edit patch: revert restores byte-exact stock', r.code === 0 && sha256(e1234) === ORIG_SHA, r.out);
 
     /* The safe area. A unit patched at 1088x480 with the whole frame as the
      * safe area reads as patched (res still 1088x480); Enable rewrites only
@@ -395,7 +426,7 @@ try {
     ok('edit-1-only: variant PATCHED, the rest ORIGINAL, a modified build', /variant:\s+PATCHED -> IC_HIGH/.test(r.out) && /sink:\s+ORIGINAL/.test(r.out) &&
         /selfstart:\s+ORIGINAL/.test(r.out) && /res:\s+ORIGINAL/.test(r.out) && /known:\s+yes, modified build/.test(r.out), r.out);
     r = run(['verify', '--target', e1]);
-    ok('edit-1-only: verify FAILS as partially patched', r.code !== 0 && /partially patched — variant patched, self-start original, res original/.test(r.out), r.out);
+    ok('edit-1-only: verify FAILS as partially patched', r.code !== 0 && /partially patched — variant patched, self-start original, res original, fps original/.test(r.out), r.out);
     r = run(['apply', '--target', e1, '--panel', 'high', '--yes']);
     ok('edit-1-only: the first edit refuses it', r.code !== 0 && /first edit requires the pristine build: variant edited/.test(r.out) && fs.readFileSync(e1).equals(e1buf), r.out);
 
@@ -406,6 +437,7 @@ try {
         /sink:\s+slot 0x2a20b0 \(59 bytes\): ORIGINAL/.test(r.out) &&
         /selfstart:\s+call 0x18176c in onSuggestUi 0x1816f0 \(setStreamStatus 0x181560, requestStream 0x181810\): ORIGINAL/.test(r.out) &&
         /res:\s+immediates 0x20ca32 0x20ca54 0x20ca66 0x20ca74 \(builder 0x20ca30\): ORIGINAL/.test(r.out) &&
+        /fps:\s+load 0x207a24 in the IC display builder 0x2078b0 \(getter 0x1fe5a0 -> 0x2a2c50, main display load 0x2076e7\): ORIGINAL/.test(r.out) &&
         /proven:\s+yes, carplay 22\.28\.3/.test(r.out) && /patchable:\s+yes/.test(r.out) && /build-id:\s+5de62156/.test(r.out), r.out);
     ok('probe: the file untouched', sha256(SRC) === ORIG_SHA && fs.statSync(SRC).mtime.getTime() === before);
     r = run(['probe', bc]);
@@ -426,11 +458,11 @@ try {
     ok('unproven build: apply without --unproven refuses, no write, no backup', r.code !== 0 && /is not a proven build; pass --unproven/.test(r.out) &&
         fs.readFileSync(ot).equals(other) && !fs.existsSync(ot + '.jap-orig'), r.out);
     r = run(['apply', '--target', ot, '--panel', 'high', '--sink', 'udp://127.0.0.1:20557?mime_type=video/H264', '--unproven', '--yes']);
-    ok('unproven build: apply writes all four edits', r.code === 0 && /patched OK/.test(r.out) && /variant -> IC_HIGH/.test(r.out) &&
-        /self-start -> requestStream/.test(r.out) && /resolution -> 1088x480/.test(r.out), r.out);
+    ok('unproven build: apply writes all five edits', r.code === 0 && /patched OK/.test(r.out) && /variant -> IC_HIGH/.test(r.out) &&
+        /self-start -> requestStream/.test(r.out) && /resolution -> 1088x480/.test(r.out) && /fps -> 15/.test(r.out), r.out);
     var od = diffs(other, fs.readFileSync(ot));
     ok('unproven build: the diff stays in the edit regions', od.length > 0 && od.every(function (x) {
-        return (x >= SLOT && x < SLOT + 4) || (x >= SINK && x < SINK + SINK_LEN) || (x >= CALL && x < CALL + CALL_LEN) || inResRegion(x); }));
+        return (x >= SLOT && x < SLOT + 4) || (x >= SINK && x < SINK + SINK_LEN) || (x >= CALL && x < CALL + CALL_LEN) || inResRegion(x) || inFpsRegion(x); }));
     r = run(['apply', '--target', ot, '--panel', 'mid', '--yes']);
     ok('unproven build: a later apply (our backup present) needs no --unproven', r.code === 0 && /variant -> IC_MID/.test(r.out), r.out);
     r = run(['apply', '--target', ot, '--panel', 'high', '--sink', 'udp://127.0.0.1:20557?mime_type=video/H264', '--yes']);

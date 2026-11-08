@@ -7,7 +7,8 @@
  * head-unit start; carplay is never stopped, killed or restarted, even where
  * recmgr would allow it; the running binary stays linked and / goes read-only
  * again; a second run changes nothing; after that start the patch is left as
- * it is, a user's revert is kept, an older patch of ours is brought up to
+ * it is, a user's revert is kept, an older patch of ours (also one with all
+ * edits but the frame rate, reported patched) is brought up to
  * date, a stock build outside the proven list is left as a conflict until
  * Enable map patched it, then patched like the proven one. Removal (deactivate) reverts and drops our backup: before the pending
  * start it moves carplay's running file back and leaves nothing pending;
@@ -231,7 +232,8 @@ async function main() {
      * nothing runs any more as it starts. */
     headUnitStart();
     st = await daemonStatus();
-    ok('patched: patchd reports patched, avb, high, nothing pending', st.state === 'patched' && st.mode === 'avb' && st.panel === 'high' && !st.pending, JSON.stringify(st));
+    ok('patched: patchd reports patched, avb, high, fps 15, nothing pending', st.state === 'patched' && st.mode === 'avb' && st.panel === 'high' &&
+        st.fps === 15 && !st.pending, JSON.stringify(st));
     ok('patched: patchd removed the unused link as it started, / read-only', !fs.existsSync(RUNNING) && ro());
     before = disk();
     r = hook('activate');
@@ -356,6 +358,18 @@ async function main() {
     r = hook('activate');
     ok('older patch: activate adds the missing edit, pending', r.code === 0 && marker().action === 'apply' &&
         /resolution -> 1088x480/.test(r.out), r.out);
+
+    /* A patch of the release before the fps edit (all four other edits): patchd
+     * reports it patched with the stock rate, and activate adds the fps edit. */
+    headUnitStart();
+    var fourEdit = Buffer.from(fs.readFileSync(TGT));
+    Buffer.from('e8776bffff8b00', 'hex').copy(fourEdit, 0x207a24);
+    fs.writeFileSync(TGT, fourEdit);
+    st = await daemonStatus();
+    ok('four-edit patch: patchd reports patched, fps stock', st.state === 'patched' && st.fps === null && !st.conflict, JSON.stringify(st));
+    r = hook('activate');
+    ok('four-edit patch: activate adds only the fps edit, pending', r.code === 0 && marker().action === 'apply' &&
+        /About to patch [^\n]*\n[^\n]*\] fps -> 15\n[^\n]*patched OK/.test(r.out) && /fps 15$/m.test(verify()), r.out);
 
     /* The patcher fails after replacing the binary (here: the backup's record
      * cannot be dropped): carplay's file stays linked and the revert waits

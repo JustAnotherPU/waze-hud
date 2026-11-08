@@ -75,10 +75,11 @@ function sites(loc) {
         slot: loc.variant.slot, high: loc.variant.high, sink: loc.sink.offset, call: loc.selfstart.offset,
         callPatched: loc.selfstart.patched, requestStream: loc.selfstart.requestStream,
         mm: loc.res.mm, px: loc.res.px, safe1: loc.res.safe1, safe2: loc.res.safe2,
+        fps: loc.fps.offset, fpsGetter: loc.fps.getter, fpsMain: loc.fps.main, fpsOriginal: loc.fps.original,
     };
 }
 var EXPECT = sites(LOC);
-function shifted(d) { var e = {}; Object.keys(EXPECT).forEach(function (k) { e[k] = /^(high|callPatched)$/.test(k) ? EXPECT[k] : EXPECT[k] + d; }); return e; }
+function shifted(d) { var e = {}; Object.keys(EXPECT).forEach(function (k) { e[k] = /^(high|callPatched|fpsOriginal)$/.test(k) ? EXPECT[k] : EXPECT[k] + d; }); return e; }
 
 var SS = LOC.selfstart.setStreamStatus, RS = LOC.selfstart.requestStream, OSU = LOC.selfstart.onSuggestUi;
 var BUILDER = LOC.res.builder;
@@ -270,6 +271,33 @@ var CASES = [
     ['a string merged into the tail of the sink slot', function (b) {
         var l = leasIn(REF, VICTIM2)[0];
         setRel(b, l.at + 3, l.at + 7, LOC.sink.offset + locator.SINK_STOCK.indexOf('mime_type'));
+    }, ['refused']],
+
+    ['the IC display\'s maxFPS load gone', function (b) { b.fill(0x90, LOC.fps.offset, LOC.fps.offset + 7); }, ['refused']],
+
+    ['the IC display\'s maxFPS load patched (mov eax,15)', function (b) {
+        Buffer.from('b80f0000006690', 'hex').copy(b, LOC.fps.offset);
+    }, ['correct']],
+
+    ['a second maxFPS load in the IC display builder', function (b) {
+        plant(b, LOC.fps.offset, 18, LOC.fps.offset + 0x40);   /* the load and the uuid getter's call */
+    }, ['refused']],
+
+    ['the maxFPS getter also called from a third place', function (b) {
+        setRel(b, LOC.fps.main + 14, LOC.fps.main + 18, LOC.fps.getter);   /* the main display's uuid call */
+    }, ['refused']],
+
+    ['the maxFPS getter returning rcx', function (b) {
+        var i = b.indexOf(Buffer.from('488d05', 'hex'), LOC.fps.getter); b[i + 2] = 0x0d;
+    }, ['refused']],
+
+    ['a dynamic relocation over the IC display\'s maxFPS load', function (b) {
+        var shoff = b.readUInt32LE(0x28), n = b.readUInt16LE(0x3c);
+        for (var i = 0; i < n; i++) {
+            var o = shoff + i * 64;
+            if (b.readUInt32LE(o + 4) === 4) { b.writeUInt32LE(vaOf(b, LOC.fps.offset), b.readUInt32LE(o + 24)); return; }
+        }
+        throw new Error('no .rela section');
     }, ['refused']],
 
     ['a dynamic relocation over the sink slot', function (b) {

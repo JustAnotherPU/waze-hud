@@ -15,6 +15,7 @@
 #                                               # (default 1088x480; goes with any sink form)
 #   woc-patch.sh apply  high --safe <WxH+X+Y|full>  # the safe area the phone keeps its
 #                                               # guidance UI in (default 504x228+286+72)
+#   woc-patch.sh apply  high --fps <N|stock>    # the cluster display's frame rate (default 15)
 #   woc-patch.sh apply  high|mid --unproven     # also the first patch of a build outside
 #                                               # the proven list (PATCH.md)
 #   woc-patch.sh revert
@@ -54,18 +55,19 @@ case "$cmd" in
   probe)   exec "$NODE" "$PATCHER" probe "${1:-$TARGET}" ;;
   apply)
     panel=${1:-}; [ $# -gt 0 ] && shift || true
-    usage='usage: woc-patch.sh apply high|mid [--capture | --sink <url> | --avb] [--res <WxH|stock>] [--safe <WxH+X+Y|full>] [--unproven]'
+    usage='usage: woc-patch.sh apply high|mid [--capture | --sink <url> | --avb] [--res <WxH|stock>] [--safe <WxH+X+Y|full>] [--fps <N|stock>] [--unproven]'
     [ "$panel" = high ] || [ "$panel" = mid ] || { echo "$usage" >&2; exit 2; }
     # Default sink: the udp:// stream the projection bridge accepts. --capture
     # uses the file:// FIFO; --sink <url> an explicit url; --avb leaves the stock
-    # sink. --res picks the advertised display size and --safe its safe area
-    # (the patcher validates both).
+    # sink. --res picks the advertised display size, --safe its safe area and
+    # --fps the cluster display's frame rate (the patcher validates them).
     # Every form applies every edit. An unknown argument is an error, not a
     # silent default.
     # (The app drives patchd for the no-SSH path; this is the manual tool.)
     capture="--sink udp://127.0.0.1:20557?mime_type=video/H264"
     res=
     safe=
+    fps=
     unproven=
     while [ $# -gt 0 ]; do
       case "$1" in
@@ -74,6 +76,7 @@ case "$cmd" in
         --sink) [ -n "${2:-}" ] || { echo "$usage" >&2; exit 2; }; capture="--sink $2"; shift ;;
         --res) [ -n "${2:-}" ] || { echo "$usage" >&2; exit 2; }; res="--res $2"; shift ;;
         --safe) [ -n "${2:-}" ] || { echo "$usage" >&2; exit 2; }; safe="--safe $2"; shift ;;
+        --fps) [ -n "${2:-}" ] || { echo "$usage" >&2; exit 2; }; fps="--fps $2"; shift ;;
         --unproven) unproven=--unproven ;;
         *) echo "$usage" >&2; exit 2 ;;
       esac
@@ -83,7 +86,7 @@ case "$cmd" in
     trap 'sync; "$MOUNT" -o remount,ro / 2>/dev/null || true' EXIT INT TERM HUP
     "$MOUNT" -o remount,rw /
     # shellcheck disable=SC2086
-    "$NODE" "$PATCHER" apply --panel "$panel" $capture $res $safe $unproven --target "$TARGET" --yes
+    "$NODE" "$PATCHER" apply --panel "$panel" $capture $res $safe $fps $unproven --target "$TARGET" --yes
     echo
     echo "Patched. $(activation)"
     echo "Revert any time with: woc-patch.sh revert"
@@ -98,6 +101,6 @@ case "$cmd" in
     echo "Reverted. $(activation)"
     ;;
   *)
-    echo "usage: woc-patch.sh status|probe [<file>]|apply high|mid [--capture|--sink <url>|--avb] [--res <WxH|stock>] [--safe <WxH+X+Y|full>] [--unproven]|revert|verify" >&2
+    echo "usage: woc-patch.sh status|probe [<file>]|apply high|mid [--capture|--sink <url>|--avb] [--res <WxH|stock>] [--safe <WxH+X+Y|full>] [--fps <N|stock>] [--unproven]|revert|verify" >&2
     exit 2 ;;
 esac

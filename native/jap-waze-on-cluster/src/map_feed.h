@@ -110,6 +110,10 @@ public:
      * what it has to show: the layer is visible only while it is live, not
      * frozen and shows a picture. */
     void set_stream(bool live, bool frozen, Picture picture);
+    /* Whether the layer is asked to be visible (set_stream's verdict). */
+    bool visible() const { return live_ && !frozen_ && picture_ == Picture::Shown; }
+    /* The renderer's layer has had no frame since it was made. */
+    bool needs_frame() const { return layer_ && need_frame_; }
 
     /* The status for the app, with decode the capture and decode part of
      * the line and stream why the picture is not whole (empty: it is). */
@@ -128,6 +132,7 @@ private:
     uint32_t layer_ = 0;
     cr::LayerOptions lo_;   /* the layer's options as last sent */
     bool live_ = false, frozen_ = false;
+    bool need_frame_ = true;
     Picture picture_ = Picture::None;
     const char *stream_line_ = nullptr;   /* the stream's state as last logged */
     std::string layer_state_ = "stalled", layer_reason_;

@@ -22,7 +22,14 @@
  * and dist-<text>-<n>.pgm, a distance crop whose glyphs are its text's
  * characters, spaces left out ("dist-1.2km-1.pgm"). Icon templates from the
  * folder replace the built-in ones, glyph templates likewise. The built-in
- * ones are our own drawings (hud_draw.h): placeholders, not Waze's icons. */
+ * ones are our own drawings (hud_draw.h): placeholders, not Waze's icons.
+ *
+ * The CarPlay card's street (its second line) has its own set, loaded with
+ * load_dir(dir, log, "str"): str-<hex>-<n>.pgm, an 'H' then the label's
+ * characters, the label as hex code points ("str-u00e9-1.pgm": é; the Mac's
+ * file system folds case). Its glyph heights are taken against the H, so a
+ * line's own tallest glyph (an É, a g) does not shift them. It is never
+ * mixed with the distance's: a letter would steal its m and k. */
 #ifndef WOC_HUD_BANNER_H
 #define WOC_HUD_BANNER_H
 
@@ -50,6 +57,7 @@ bool crop(const uint8_t *y, unsigned w, unsigned h, const Rect &r, Gray *out);
 struct Reading {
     std::string maneuver;   /* empty: no banner */
     std::string distance;   /* "300 m", "1.2 km"; empty when not read */
+    std::string street;     /* UTF-8; empty when not read; not compared: StreetHold settles it */
     float score = 0;        /* the icon's match */
     bool operator==(const Reading &o) const { return maneuver == o.maneuver && distance == o.distance; }
     bool operator!=(const Reading &o) const { return !(*this == o); }
@@ -61,19 +69,22 @@ public:
     void add_builtin(bool icons);
     /* The folder's PGM files; returns how many templates it added, with a
      * line in *log for each file it could not use. A missing folder adds
-     * none. */
-    int load_dir(const std::string &dir, std::string *log);
+     * none. glyphs: which glyph kind to load, "dist" (and the icons) or
+     * "str"; the other kind's files are left out. */
+    int load_dir(const std::string &dir, std::string *log, const std::string &glyphs = "dist");
     bool add_icon(const std::string &label, const Gray &g);
-    /* A distance crop and its text: false unless its glyphs are as many as
-     * the text's characters. */
-    bool add_line(const std::string &text, const Gray &g);
+    /* A distance crop and its UTF-8 text: false unless its glyphs are as
+     * many as the text's characters. street: a str- line, an H first. */
+    bool add_line(const std::string &text, const Gray &g, bool street = false);
     size_t icons() const { return icons_.size(); }
     size_t glyphs() const { return glyphs_.size(); }
+    /* A street set's H height in pixels (its glyphs' rel_h are over it); 0 for a distance set. */
+    float ref_h() const { return ref_n_ ? ref_sum_ / ref_n_ : 0; }
 
     struct T {
         std::string label;
         std::vector<float> v;
-        float rel_h = 1;   /* a glyph's height over the line's */
+        float rel_h = 1;   /* a glyph's height over the line's (a street's: over the H) */
         bool builtin = false;
     };
     const std::vector<T> &icon_set() const { return icons_; }
@@ -81,6 +92,8 @@ public:
 
 private:
     std::vector<T> icons_, glyphs_;
+    float ref_sum_ = 0;
+    int ref_n_ = 0;
 };
 
 class Recogniser {
@@ -89,6 +102,11 @@ public:
     Reading read(const uint8_t *y, unsigned w, unsigned h) const;
     /* The glyphs of a distance crop, read as text without spaces ("1.2km"). */
     std::string read_text(const Gray &g) const;
+    /* A street crop read with a street set: words, a space where the gap is
+     * over 0.3 of the H's height, a trailing ellipsis (iOS's cut: three
+     * low dots) left out. Empty when any glyph matches under min_score:
+     * no street rather than a wrong one. */
+    std::string read_words(const Gray &g, float min_score) const;
 
 private:
     const Templates *t_;
@@ -124,6 +142,26 @@ private:
     int64_t hold_ms_, card_ms_ = -1000000000;
     Reading card_;
 };
+
+/* The card's street, settled: shown once read the same twice in a row
+ * (reads it could not make do not break the row), kept while the manoeuvre
+ * is the same, gone when it changes or its distance goes up by more than
+ * 30 m (the next manoeuvre, same kind: hudguide's rule for a new one). Fed
+ * fresh card reads only: a held reading repeated is not a second read. */
+class StreetHold {
+public:
+    void push(const Reading &card);
+    const std::string &street() const { return shown_; }
+
+private:
+    std::string maneuver_, cand_, shown_;
+    unsigned seen_ = 0;
+    double metres_ = -1;   /* the last distance read; reads without one keep it */
+};
+
+/* A parse_distance() result ("300 m", "1.2 km", "800 ft", "0.5 mi") in
+ * metres; -1 for anything else. */
+double distance_metres(const std::string &d);
 
 /* The distance from text such as "300m", "1.2km", "0,3mi": "300 m",
  * "1.2 km"; empty when it is none of those, or when a digit was lost

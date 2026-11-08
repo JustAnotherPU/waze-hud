@@ -107,6 +107,7 @@ void MapFeed::make_layer()
     target_state_.clear();
     holder_.clear();
     layer_ = client_.video(lo_, cfg_.video);
+    need_frame_ = true;
     log_info("render: map layer on %s (%ux%u), quad %ux%u at %u,%u", cfg_.target.c_str(), tw, th, q.w, q.h, q.x, q.y);
 }
 
@@ -168,8 +169,10 @@ void MapFeed::count_second(int64_t now_ms)
 
 void MapFeed::offer(std::vector<uint8_t> *atlas, uint64_t id, int64_t now_ms)
 {
-    if (layer_ && client_.frame(layer_, atlas, id))
+    if (layer_ && client_.frame(layer_, atlas, id)) {
         frames_++;
+        need_frame_ = false;
+    }
     count_second(now_ms);
 }
 

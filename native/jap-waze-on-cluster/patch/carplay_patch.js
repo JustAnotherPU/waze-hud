@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Robert Nisipeanu
-/* carplay_patch.js — four reversible edits to the CarPlay binary that,
+/* carplay_patch.js — five reversible edits to the CarPlay binary that,
  * together, put the CarPlay instrument-cluster ("alternate screen") H.264 where
  * this tool can read it, at the size this tool displays (PATCH.md).
  *
@@ -36,18 +36,26 @@
  *            (504x228 at 286,72). `--res WxH` picks another pixel size at the same
  *            physical size, `--safe` another safe area; `--res stock`, and
  *            `--panel mid`, keep the build's stock geometry.
+ *   fps      the maxFPS the IC display advertises to the phone (7 bytes). Both
+ *            displays read one shared constant (60) through a getter, so the
+ *            phone sends the cluster stream at up to 60 fps (30 in practice).
+ *            `apply --panel high` replaces the IC display's call+load with
+ *            `mov eax,15` and a 2-byte nop, halving the cluster decode load;
+ *            the main display and the constant are left as they are.
+ *            `--fps N` (1..60) picks another rate; `--fps stock`, and
+ *            `--panel mid`, keep the build's stock load.
  *
  * The sites are found in each build by carplay_locate.js; a build where any
  * of them is not found, or reads as neither stock nor this patch, is refused.
  * The first edit of a build outside the proven list needs --unproven.
- * All four edits are reversible from a verified full backup of the original
+ * All five edits are reversible from a verified full backup of the original
  * binary.
  *
  * Node 8.16.2 on the unit, no dependencies.
  *
  *   carplay_patch.js status [--target <file>]
  *   carplay_patch.js probe  [<file>]
- *   carplay_patch.js apply  --panel high|mid [--sink <url> | --capture <fifo>] [--res WxH|stock] [--safe WxH+X+Y|full] [--target <file>] [--unproven] [--yes]
+ *   carplay_patch.js apply  --panel high|mid [--sink <url> | --capture <fifo>] [--res WxH|stock] [--safe WxH+X+Y|full] [--fps N|stock] [--target <file>] [--unproven] [--yes]
  *   carplay_patch.js revert [--target <file>] [--yes] [--drop-backup]
  *   carplay_patch.js verify [--target <file>]
  *
@@ -85,7 +93,10 @@ var RES_DEFAULT = { w: 1088, h: 480, mmw: 138, mmh: 61 };
  * the box (y 360), at 300 it is above it (about 250). Other --res sizes
  * scale it. */
 var SAFE_DEFAULT = { x: 286, y: 72, w: 504, h: 228 };
-var EDITS = ['variant', 'sink', 'selfstart', 'res'];
+/* The frame rate `--panel high` asks the phone for on the cluster display,
+ * and the most --fps takes (the stock rate). */
+var FPS_DEFAULT = 15, FPS_MAX = 60;
+var EDITS = ['variant', 'sink', 'selfstart', 'res', 'fps'];
 
 function sha256(buf) { return crypto.createHash('sha256').update(buf).digest('hex'); }
 function die(msg) { process.stderr.write('error: ' + msg + '\n'); process.exit(1); }
@@ -143,6 +154,18 @@ function writeRes(buf, r, g) {
     buf.writeUInt32LE(g.safeh, r.safe2); buf.writeUInt16LE(g.safex, r.safe2 + 4); buf.writeUInt16LE(g.safey, r.safe2 + 6);
 }
 
+/* The IC display's maxFPS load: the stock call to the getter, or this tool's
+ * `mov eax,fps ; 2-byte nop` with fps 1..FPS_MAX. */
+function fpsState(buf, f) {
+    if (!f.ok) return { state: 'unknown', reason: f.reason };
+    var x = buf.toString('hex', f.offset, f.offset + 7), n = buf.readUInt32LE(f.offset + 1);
+    if (x === f.original) return { state: 'original', fps: f.value };
+    if (buf[f.offset] === 0xb8 && x.slice(10) === '6690' && n >= 1 && n <= FPS_MAX) return { state: 'patched', fps: n };
+    return { state: 'unknown', reason: 'fps: load not recognised (' + x + ')' };
+}
+
+function fpsBytes(n) { var b = Buffer.from('b8000000006690', 'hex'); b.writeUInt32LE(n, 1); return b; }
+
 function safeText(g) { return 'safe ' + g.safew + 'x' + g.safeh + ' at ' + g.safex + ',' + g.safey; }
 function geomText(g) { return g.w + 'x' + g.h + ' at ' + g.mmw + 'x' + g.mmh + 'mm, ' + safeText(g); }
 
@@ -150,7 +173,7 @@ function classify(buf) {
     var loc = locator.locate(buf);
     if (!loc.elf) return { ok: false, reason: loc.reason, loc: loc, size: buf.length };
     return { ok: true, loc: loc, size: buf.length, variant: variantState(buf, loc.variant), sink: sinkState(buf, loc.sink),
-             selfstart: selfstartState(buf, loc.selfstart), res: resState(buf, loc.res) };
+             selfstart: selfstartState(buf, loc.selfstart), res: resState(buf, loc.res), fps: fpsState(buf, loc.fps) };
 }
 
 /* Why the patcher does not recognise the build: [] when every edit is found
@@ -177,12 +200,12 @@ function label(c) {
     return proven ? proven.version : c.loc.buildId ? 'build ' + c.loc.buildId : 'build without a build-id';
 }
 
-/* The byte ranges the four edits write: apply changes only these, and revert
+/* The byte ranges the five edits write: apply changes only these, and revert
  * restores only these, so changes another tool made elsewhere stay. */
 function regions(loc) {
     var r = loc.res;
     return [[loc.variant.slot, 4], [loc.sink.offset, loc.sink.len], [loc.selfstart.offset, 5],
-        [r.mm, 8], [r.px, 8], [r.safe1, 8], [r.safe2, 8]];
+        [r.mm, 8], [r.px, 8], [r.safe1, 8], [r.safe2, 8], [loc.fps.offset, 7]];
 }
 
 /* Two classified images are the same build: the same size, build-id and edit
@@ -204,6 +227,7 @@ function describe(name, s) {
     if (name === 'variant') return s.state === 'original' ? 'ORIGINAL (2nd display gated off for variant 7)' : 'PATCHED -> IC_' + s.panel.toUpperCase();
     if (name === 'sink') return s.state === 'original' ? 'ORIGINAL (2nd stream -> AVB stream 15)' : 'REDIRECTED -> ' + s.url;
     if (name === 'selfstart') return s.state === 'original' ? 'ORIGINAL (waits for NavController; stream never starts)' : 'SELF-START (CarPlay starts the cluster stream itself)';
+    if (name === 'fps') return s.state === 'original' ? 'ORIGINAL (the phone may send the cluster up to ' + s.fps + ' fps)' : 'FPS ' + s.fps + ' (the cluster display asks the phone for at most ' + s.fps + ' fps)';
     return s.state === 'original' ? 'ORIGINAL (IC_HIGH advertises ' + s.res.w + 'x' + s.res.h + ')' : 'PATCHED (IC_HIGH advertises ' + geomText(s.res) + ')';
 }
 
@@ -253,6 +277,8 @@ function cmdProbe(target) {
             ' (setStreamStatus ' + hex(loc.selfstart.setStreamStatus) + ', requestStream ' + hex(loc.selfstart.requestStream) + '): ',
         res: loc.res.ok && 'immediates ' + [loc.res.mm, loc.res.px, loc.res.safe1, loc.res.safe2].map(hex).join(' ') +
             ' (builder ' + hex(loc.res.builder) + '): ',
+        fps: loc.fps.ok && 'load ' + hex(loc.fps.offset) + ' in the IC display builder ' + hex(loc.fps.builder) + ' (getter ' + hex(loc.fps.getter) +
+            ' -> ' + hex(loc.fps.constant) + ', main display load ' + hex(loc.fps.main) + '): ',
     };
     EDITS.forEach(function (e) { line(e, (at[e] || '') + describe(e, c[e])); });
     var bad = unrecognised(c);
@@ -308,6 +334,19 @@ function resFor(panel, res, safe) {
     return g;
 }
 
+/* The frame rate an apply writes, or null for the build's stock load (--fps
+ * stock and the mid panel). The high panel asks the phone for FPS_DEFAULT on
+ * the cluster display, or --fps N. */
+function fpsFor(panel, fps) {
+    if (fps !== undefined && panel !== 'high') die('--fps sets the cluster display\'s frame rate; it goes with --panel high');
+    if (panel !== 'high' || fps === 'stock') return null;
+    if (fps === undefined) return FPS_DEFAULT;
+    if (!/^[0-9]+$/.test(fps || '')) die('--fps needs N (1..' + FPS_MAX + ') or "stock"');
+    var n = parseInt(fps, 10);
+    if (n < 1 || n > FPS_MAX) die('--fps ' + fps + ' out of range: 1..' + FPS_MAX);
+    return n;
+}
+
 /* The backup, checked for an apply: its SHA-256 is the one recorded when it
  * was taken, and it is a pristine build. `pre`, when given, is the backup
  * already read and classified ({ buf, c }). { buf, hash, c } or { err }. */
@@ -320,9 +359,9 @@ function checkedBackup(target, pre) {
 }
 
 /* The most bytes a binary may differ in from its backup and still count as
- * the backup's build when either lacks a GNU build-id: the four edits' bytes
- * (variant 4, sink 59, self-start 5, geometry 4 x 8), twice over. */
-var SAME_BUILD_MAX_DIFF = 2 * (4 + 59 + 5 + 4 * 8);
+ * the backup's build when either lacks a GNU build-id: the five edits' bytes
+ * (variant 4, sink 59, self-start 5, geometry 4 x 8, fps 7), twice over. */
+var SAME_BUILD_MAX_DIFF = 2 * (4 + 59 + 5 + 4 * 8 + 7);
 
 /* Why `cur` is not the build `orig` is the original of, or null when it is:
  * the same build-id and size, or, when either has no build-id, the same size
@@ -372,9 +411,9 @@ function restorePlan(target, cur, c) {
     return { b: b, bc: bc, regionWise: false, out: orig };
 }
 
-function cmdApply(target, panel, capture, sink, res, safe, yes, unproven) {
+function cmdApply(target, panel, capture, sink, res, safe, fps, yes, unproven) {
     if (panel !== 'high' && panel !== 'mid') die('--panel must be high or mid');
-    var wantRes = resFor(panel, res, safe);
+    var wantRes = resFor(panel, res, safe), wantFps = fpsFor(panel, fps);
     var sinkUrl = sinkUrlFor(capture, sink), slotLen = locator.SINK_STOCK.length;
     if (sinkUrl !== undefined && Buffer.byteLength(sinkUrl, 'latin1') > slotLen)
         die('sink URL too long: "' + sinkUrl + '" is ' + Buffer.byteLength(sinkUrl, 'latin1') + ' bytes, slot holds ' + slotLen);
@@ -442,6 +481,11 @@ function cmdApply(target, panel, capture, sink, res, safe, yes, unproven) {
         put(resText, o, (wantRes ? resWant : orig).slice(o, o + 8));
     });
 
+    /* The IC display's advertised frame rate: this tool's on the high panel,
+     * the backup's stock load otherwise. The main display keeps its own. */
+    var fo = loc.fps.offset;
+    put(wantFps ? 'fps -> ' + wantFps : 'fps -> stock ' + loc.fps.value, fo, wantFps ? fpsBytes(wantFps) : orig.slice(fo, fo + 7));
+
     if (changed.length === 0) { process.stdout.write('nothing to do; already in the requested state\n'); return; }
 
     /* The edited image must read as exactly the requested state, at the same
@@ -451,6 +495,7 @@ function cmdApply(target, panel, capture, sink, res, safe, yes, unproven) {
         : cc.sink.state !== (sinkUrl !== undefined ? 'redirected' : 'original') ? 'sink'
         : cc.selfstart.state !== 'patched' ? 'self-start'
         : cc.res.state !== (wantRes ? 'patched' : 'original') ? 'resolution'
+        : cc.fps.state !== (wantFps ? 'patched' : 'original') || (wantFps && cc.fps.fps !== wantFps) ? 'fps'
         : !onlyRegionsDiffer(buf, out, regions(loc)) ? 'bytes outside the edit regions' : null;
     if (wrong) die('refusing: the edited binary does not verify (' + wrong + '); no change made');
 
@@ -515,15 +560,17 @@ function cmdVerify(target) {
      * would advertise the display but never start the stream; a high-panel
      * build with stock resolution advertises a display size this tool does
      * not show. Verify calls neither enabled. The mid panel keeps the stock
-     * geometry by design. */
+     * geometry by design. The frame rate is not needed: a patch from before
+     * it (stock fps) is enabled, and Enable adds it. */
     var resOk = c.variant.panel !== 'high' || c.res.state === 'patched';
     var enabled = c.variant.state === 'patched' && c.selfstart.state === 'patched' && resOk;
-    var partial = (c.variant.state === 'patched' || c.selfstart.state === 'patched' || c.res.state === 'patched') && !enabled;
-    if (partial) { process.stderr.write('FAIL: partially patched — variant ' + c.variant.state + ', self-start ' + c.selfstart.state + ', res ' + c.res.state + ' (enable applies all edits)\n'); process.exit(1); }
+    var partial = (c.variant.state === 'patched' || c.selfstart.state === 'patched' || c.res.state === 'patched' || c.fps.state === 'patched') && !enabled;
+    if (partial) { process.stderr.write('FAIL: partially patched — variant ' + c.variant.state + ', self-start ' + c.selfstart.state + ', res ' + c.res.state + ', fps ' + c.fps.state + ' (enable applies all edits)\n'); process.exit(1); }
     process.stdout.write('OK: variant ' + (c.variant.state === 'original' ? 'original' : 'IC_' + c.variant.panel.toUpperCase()) +
         ', sink ' + (c.sink.state === 'original' ? 'original (AVB 15)' : c.sink.url) +
         ', self-start ' + (c.selfstart.state === 'patched' ? 'on' : 'off') +
-        ', res ' + (c.res.state === 'patched' ? c.res.res.w + 'x' + c.res.res.h : 'stock') + '\n');
+        ', res ' + (c.res.state === 'patched' ? c.res.res.w + 'x' + c.res.res.h : 'stock') +
+        ', fps ' + (c.fps.state === 'patched' ? c.fps.fps : 'stock') + '\n');
 }
 
 /* Write by atomic rename so a crash mid-write cannot leave carplay half
@@ -577,6 +624,8 @@ function parseArgs(argv) {
             a.res = (i + 1 < argv.length && argv[i + 1].indexOf('--') !== 0) ? argv[++i] : null;
         } else if (t === '--safe') {
             a.safe = (i + 1 < argv.length && argv[i + 1].indexOf('--') !== 0) ? argv[++i] : null;
+        } else if (t === '--fps') {
+            a.fps = (i + 1 < argv.length && argv[i + 1].indexOf('--') !== 0) ? argv[++i] : null;
         } else a._.push(t);
     }
     return a;
@@ -588,10 +637,10 @@ function main() {
     var target = a.target || '/usr/bin/carplay';
     if (cmd === 'status') cmdStatus(target);
     else if (cmd === 'probe') cmdProbe(a.target || a._[1] || '/usr/bin/carplay');
-    else if (cmd === 'apply') cmdApply(target, a.panel, a.capture, a.sink, a.res, a.safe, a.yes, a.unproven);
+    else if (cmd === 'apply') cmdApply(target, a.panel, a.capture, a.sink, a.res, a.safe, a.fps, a.yes, a.unproven);
     else if (cmd === 'revert') cmdRevert(target, a.yes, a.force, a.dropBackup);
     else if (cmd === 'verify') cmdVerify(target);
-    else { process.stderr.write('usage: carplay_patch.js status|probe|apply|revert|verify [--target <file>] [--panel high|mid] [--capture <fifo> | --sink <url>] [--res WxH|stock] [--safe WxH+X+Y|full] [--unproven] [--yes] [--force] [--drop-backup]\n'); process.exit(2); }
+    else { process.stderr.write('usage: carplay_patch.js status|probe|apply|revert|verify [--target <file>] [--panel high|mid] [--capture <fifo> | --sink <url>] [--res WxH|stock] [--safe WxH+X+Y|full] [--fps N|stock] [--unproven] [--yes] [--force] [--drop-backup]\n'); process.exit(2); }
 }
 
 main();

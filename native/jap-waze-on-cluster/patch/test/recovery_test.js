@@ -715,6 +715,8 @@ function stageAndRestore(dir, mountBody, before, alwaysLink) {
     fs.copyFileSync(CARPLAY_BIN, tgt);
     cp.execFileSync(process.execPath, [CARPLAY_PATCH, 'apply', '--panel', 'high',
         '--sink', 'udp://127.0.0.1:20557?mime_type=video/H264', '--target', tgt, '--yes'], { stdio: 'ignore' });
+    const fpsAt = require('../carplay_locate.js').locate(fs.readFileSync(tgt)).fps.offset;
+    const fpsBefore = fs.readFileSync(tgt).slice(fpsAt, fpsAt + 7).toString('hex');
     const pending = path.join(sock, 'activation-pending');
     fs.writeFileSync(pending, 'pending\n');
     const mounts = path.join(dir, 'mounts');
@@ -737,6 +739,7 @@ function stageAndRestore(dir, mountBody, before, alwaysLink) {
     return {
         err: JSON.parse(out).err,
         tgtSha: sha(fs.readFileSync(tgt)),
+        fpsBefore: fpsBefore,
         mounts: fs.readFileSync(mounts, 'utf8'),
         running: fs.existsSync(tgt + '.jap-running'),
         runningIno: fs.existsSync(tgt + '.jap-running') ? fs.statSync(tgt + '.jap-running').ino : null,
@@ -752,7 +755,8 @@ test('realRestore reverts to the verified stock and leaves / read-only', () => {
         const r = stageAndRestore(dir, 'case "$*" in *remount,rw*) echo "/dev/root / ext4 rw 0 0" > "' + path.join(dir, 'mounts') +
             '";; *remount,ro*) echo "/dev/root / ext4 ro 0 0" > "' + path.join(dir, 'mounts') + '";; esac\n');
         assert.strictEqual(r.err, null, 'no error: ' + r.err);
-        assert.strictEqual(r.tgtSha, stock, 'carplay restored to the verified stock');
+        assert.strictEqual(r.fpsBefore, 'b80f0000006690', 'the staged patch carries the fps edit');
+        assert.strictEqual(r.tgtSha, stock, 'carplay restored to the verified stock, the fps load too');
         assert(/\bro\b/.test(r.mounts), '/ is read-only again');
         assert(!r.running, 'nothing runs the patched binary: no link kept');
         assert(r.pendingGone, 'the pending-activation marker is cleared');

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <vector>
 
 namespace woc {
@@ -20,6 +21,44 @@ std::string turn_label(float deg, float slight_max)
 }
 
 namespace {
+
+/* test/data/carplay-card-30m.pgm's street reads at 0.81 at worst; the same
+ * names rendered semibold read 0.70 and up, a wrong letter (G as C) 0.62 */
+const float kStreetMin = 0.7f;
+
+/* A road shield before the street (a grey road number box, the car 2026-11-08) is
+ * a run of columns mostly mid-grey; a letter's antialiased edge is a column
+ * or two. A run of 20 or more starting in the first quarter is blanked to
+ * the card's black up to the shield's last lit column. */
+void blank_shield(Gray *g)
+{
+    const unsigned need = g->h / 4 + 1;
+    unsigned run = 0, x = 0;
+    for (; x < g->w; x++) {
+        unsigned n = 0;
+        for (unsigned y = 0; y < g->h; y++) {
+            const uint8_t v = g->px[(size_t)y * g->w + x];
+            n += v >= 60 && v <= 200;
+        }
+        if (n >= need) {
+            run++;
+        } else if (run >= 20) {
+            break;
+        } else {
+            run = 0;
+            if (x > g->w / 4) return;
+        }
+    }
+    if (run < 20) return;
+    for (;; x++) {   /* through the shield's border */
+        bool lit = false;
+        for (unsigned y = 0; x < g->w && y < g->h && !lit; y++)
+            lit = g->px[(size_t)y * g->w + x] >= 60;
+        if (!lit) break;
+    }
+    for (unsigned y = 0; y < g->h; y++)
+        std::fill(g->px.begin() + (size_t)y * g->w, g->px.begin() + (size_t)y * g->w + std::min(x, g->w), 0);
+}
 
 /* Geodesic BFS inside the part (lab == id) from s; the farthest pixel, and
  * each pixel's parent when par is given. */
@@ -194,7 +233,73 @@ Reading CardReader::read(const uint8_t *y, unsigned w, unsigned h)
         text_ = rec_.read_text(g);
         r.distance = parse_distance(text_);
     }
+    if (has_street_ && crop(y, w, h, c_.street, &g)) {
+        blank_shield(&g);
+        r.street = street_.read_words(g, kStreetMin);
+    }
     return r;
+}
+
+bool parse_route_uv(const std::string &s, RouteBounds *b)
+{
+    int v[4];
+    char tail;
+    if (std::sscanf(s.c_str(), "%d,%d,%d,%d%c", &v[0], &v[1], &v[2], &v[3], &tail) != 4)
+        return false;
+    for (int x : v)
+        if (x < 0 || x > 255)
+            return false;
+    if (v[0] > v[1] || v[2] > v[3])
+        return false;
+    b->umin = v[0], b->umax = v[1], b->vmin = v[2], b->vmax = v[3];
+    return true;
+}
+
+unsigned route_pixels(const uint8_t *atlas, unsigned w, unsigned h, const RouteBounds &b)
+{
+    if (!b.set())
+        return 0;
+    const uint8_t *uv = atlas + (size_t)w * h;   /* row r: U in columns 0..w/2-1, V after */
+    unsigned n = 0;
+    for (unsigned cy = 0; cy < h / 2; cy += 4)
+        for (unsigned cx = 0; cx < w / 2; cx += 4) {
+            const int u = uv[(size_t)cy * w + cx], v = uv[(size_t)cy * w + w / 2 + cx];
+            if (u >= b.umin && u <= b.umax && v >= b.vmin && v <= b.vmax && atlas[(size_t)2 * cy * w + 2 * cx] >= b.ymin)
+                n++;
+        }
+    return n;
+}
+
+int route_state(const uint8_t *atlas, unsigned w, unsigned h, const RouteBounds &b)
+{
+    return b.set() ? route_pixels(atlas, w, h, b) >= b.min_px : -1;
+}
+
+bool write_map_dump(const std::string &base, const uint8_t *atlas, unsigned w, unsigned h, bool ppm)
+{
+    const uint8_t *uv = atlas + (size_t)w * h;
+    FILE *f = std::fopen((base + ".yuv").c_str(), "wb");
+    bool ok = f && std::fwrite(atlas, 1, (size_t)w * h, f) == (size_t)w * h;
+    for (unsigned plane = 0; ok && plane < 2; plane++)
+        for (unsigned r = 0; ok && r < h / 2; r++)
+            ok = std::fwrite(uv + (size_t)r * w + plane * (w / 2), 1, w / 2, f) == w / 2;
+    if (f) ok = std::fclose(f) == 0 && ok;
+    if (!ppm) return ok;
+    f = ok ? std::fopen((base + ".ppm").c_str(), "wb") : nullptr;
+    ok = f && std::fprintf(f, "P6\n%u %u\n255\n", w, h) > 0;
+    std::vector<uint8_t> row((size_t)w * 3);
+    for (unsigned y = 0; ok && y < h; y++) {
+        for (unsigned x = 0; x < w; x++) {
+            const size_t c = (size_t)(y / 2) * w + x / 2;
+            const double Y = atlas[(size_t)y * w + x], U = uv[c] - 128.0, V = uv[c + w / 2] - 128.0;
+            const double rgb[3] = {Y + 1.402 * V, Y - 0.344136 * U - 0.714136 * V, Y + 1.772 * U};
+            for (int k = 0; k < 3; k++)
+                row[(size_t)x * 3 + k] = (uint8_t)std::lround(std::min(255.0, std::max(0.0, rgb[k])));
+        }
+        ok = std::fwrite(row.data(), 1, row.size(), f) == row.size();
+    }
+    if (f) ok = std::fclose(f) == 0 && ok;
+    return ok;
 }
 
 }  // namespace woc

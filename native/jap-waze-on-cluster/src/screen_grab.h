@@ -28,6 +28,9 @@ struct ScreenGrabConfig {
     std::string wayland_dir = "/run/wayland";
     std::string fifo = "/run/jap-waze-on-cluster/screen.fifo";
     unsigned w = 1920, h = 720, fps = 4;
+    /* Only this part is turned into luma (the card reader's rects); the rest
+     * stays 0. crop_w or crop_h 0: the whole screen. */
+    unsigned crop_x = 0, crop_y = 0, crop_w = 0, crop_h = 0;
 };
 
 class ScreenGrab {

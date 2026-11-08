@@ -3,7 +3,8 @@
 Shows the CarPlay instrument-cluster map (Waze, Apple Maps or Google Maps),
 or Android Auto's (Google Maps), on the instrument cluster of a BMW with an
 iDrive 7 head unit (MGU), which the stock software does not do, and Waze's
-next turn and distance on BMW's own HUD arrows ("HUD arrows"). It runs as root tools on the head unit and is
+next turn, its distance and the street on BMW's own HUD arrows ("HUD
+arrows"). It runs as root tools on the head unit and is
 driven from the HMI by the companion app
 [jap_waze_cluster](../../apps/jap_waze_cluster).
 
@@ -36,7 +37,7 @@ a video pipeline:
 Install the app `jap_waze_cluster` (**Waze HUD**) from this repository's
 catalog (Store source `JustAnotherPU/waze-hud`, Releases) through the
 [mgu Store](https://github.com/robertnisipeanu/mgu-store). The app requires
-this tool (1.1.1); this tool requires `cluster-render` 0.3.7 or later, which this
+this tool (1.1.1 or later); this tool requires `cluster-render` 0.3.7 or later, which this
 repository does not publish (add the source `robertnisipeanu/idrive-apps`
 too, which does), and `mgu-deploy` 0.7.11, the deploy tool version that runs
 activate and deactivate hooks and puts the tool's `recmgr` and `crashNames`
@@ -58,8 +59,8 @@ files. While the other tool is installed
   no restart pending. `deactivate` still undoes a patch of ours when our own
   backup is there (the other tool was installed after this one), else
   changes nothing.
-- The map (and its control socket), capture, HUD guidance and crash-watcher
-  units do not start; the boot steps (`-boot`, `-aa-boot`) still run and
+- The map (and its control socket), capture, HUD guidance, vehicle speed
+  and crash-watcher units do not start; the boot steps (`-boot`, `-aa-boot`) still run and
   restore only a patch of ours that crash-loops (idle without our backup)
   (`ConditionPathExists=!` that file); patchd runs, and refuses Enable and
   the Android Auto apply and settings (a revert only undoes our own patch).
@@ -86,7 +87,16 @@ and the app says why and offers Enable map, when Disable map was used, when
 the patcher cannot find or recognise one of its edit sites in the binary or
 something else modified it, when the build is outside the proven list and
 Enable map has not patched it, or when `carplay.service` starts another program.
-An update brings an older patch of ours up to date.
+An update brings an older patch of ours up to date: from 1.1.1 that adds
+only the fps edit ("The patch"), at the next head-unit start like the rest.
+
+**The speed service.** `jap-waze-on-cluster-speedd` (1.2.0) reads the
+vehicle speed for the HUD guidance while CarPlay is hidden ("CarPlay in the
+background"). It is a unit of its own, enabled at install and started by the
+next head-unit start, as a new unit is: the install never restarts a unit
+it has just added. Until that start hudguide has no speed, and works as in
+1.1.1 (no turn while CarPlay is hidden); so it does until the route colour
+is calibrated ("Route calibration").
 
 The same hook then writes the Android Auto patch, on the one proven aapd
 build and only on a car coded `KI_KOMBI_VARIANT` 7, and never stops or
@@ -353,8 +363,20 @@ The cluster map is unchanged. Two sources, in order (seen on the car
    (before, the first digit was cut: "500 m" read "f00m"). Its fork icons
    (keep, exit) read 50 degrees, its turns 83: slight below 65.
    With `hud_reader = card` (the default) the card is the only source: no
-   card, no arrow (the HUD clears 3 s after it goes). The readers below
+   card, no arrow (the HUD clears 3 s after it goes); the map's arrow is
+   still read then, but only into `hud.json`'s `map`. The readers below
    stay for `hud_reader = map` or `banner`.
+   **The street** (the card's second line, `hud_card_street_rect`; BMW
+   shows it under the distance, seen 2026-11-07) is read with a template set
+   of its own, `str-<hex>-1.pgm` from the same tool (SF Pro, weight 700 at
+   optical size 17: the width and the ink of the card's street names;
+   Latin-1 letters, œ, ’, ', -, ., /, digits; the label in hex as the Mac's
+   file system folds case), never mixed with the digits' (a letter would
+   steal the m). A space is a gap over 0.3 of the H's height, iOS's
+   trailing ellipsis is left out (the name's start still goes), and a
+   glyph under 0.7 gives no street rather than a wrong one. A street shows
+   once read the same twice, stays while the manoeuvre does (or until its
+   distance goes up by over 30 m: the next one, same kind), goes with it.
 2. **The arrow on Waze's cluster map** (`hud_reader = map`): the white arrow
    Waze draws on the route at the next junction; its stem is the end nearer
    the chevron (`hud_car_x/y`). No distance. Any white part with a thick
@@ -396,7 +418,13 @@ validated on the car; `image` is an optional fallback):
   next manoeuvres (an intersection with its turn, a branch, a roundabout with
   its exit, the destination; the distance as displayed). Waze sends no such
   guidance, so we make those calls: jap-waze-on-cluster writes the reading to
-  `/run/jap-waze-on-cluster/hud.json` (on change and every second), and the
+  `/run/jap-waze-on-cluster/hud.json` (on change and every second; v2 adds to
+  v1's `maneuver`, `distance`, `at`: `street` when read, `source` `card`,
+  `hold` or `none`, `stream` 1 while the arrows are on (`hud_mode =
+  arrows`, the map target, the picture shown) and the cluster stream is
+  live and not frozen, `map` the cluster map's arrow while no card shows,
+  `route` Waze's route line on the map: 1, 0, or -1 unknown; then `geo`,
+  the route ahead traced on the map, below), and the
   `jap-waze-on-cluster-hudguide` service (as carplay's user, cia_13002: the
   navigation refuses hmi_5000)
   sends it, as carplay builds its first event, and `INACTIVE` with an empty
@@ -408,10 +436,101 @@ validated on the car; `image` is an optional fallback):
   (`patch/pmg_schema.js`, checked against the unit's own src-gen files), so
   no BMW data ships here.
 
+**CarPlay in the background (native).** With one of our apps on the centre
+screen the card is gone, while Waze's cluster stream keeps decoding (seen
+on the car 2026-11-08: 906 frames a minute, the picture changing). hudguide
+keeps the last card's manoeuvre and street (the last card read's, never an
+older one) and counts its distance down with the car's speed (a monotonic
+clock; the speed comes from `jap-waze-on-cluster-speedd`, which reads the
+unit's vehicle data (Vehicle2) as hmi_5000 and writes
+`/run/jap-waze-on-cluster/speed.json`; no speed, no hold), only while `stream` is 1 and only while Waze's route line shows:
+`route` 1 as the card goes, a `route` 0 two heartbeats (about 1 s each)
+running, or a -1, ends it. It ends when the route traced on the map says
+the turn is passed on two heartbeats running (`geo.passed`, below), at the
+latest `hud_bg_hold_s` after the card went (600 s, a safety cap; 0 off),
+or once the map's arrow shows the other side on two heartbeats (each a
+fresh read, about 1 s apart). The reckoned distance only backs that up:
+150 m past the turn once the route was traced since the card's manoeuvre
+began, 20 m past it when it never was (a daylight map, say: the colours
+below are night ones). The map's arrow is read at most once a second
+while no card shows. Nothing rather than wrong: until the route's colour
+is calibrated (`hud_route_uv` unset, the default) `route` is -1 and nothing
+is reckoned.
+
+**The route ahead on the map (`geo`, `src/hud_route.h`).** Once a second,
+card or not (with the card it makes pairs to check the map against), the
+render traces the route ahead on the cluster map: Waze draws it bright
+cyan (measured on the car's night frames 2026-11-08: luma 168-175, U
+172-179, V 36-47; a thin far stretch blends to U 156-160, V 68-88 at luma
+172), the route behind dark teal (luma 88-95, U 152-155, V 76-79), and
+names streets along it in blue boxes (luma 96-103, U 160-167, V 80-87,
+white text). `hud_route_uv` takes the boxes and the route behind, not the
+route ahead: it stays a presence test. On every 2nd chroma sample (a 4 px
+grid): route ahead = `hud_geo_uv` with the brightest of the sample's four
+luma at least `hud_route_bright_ymin`; boxes = `hud_label_uv` under luma
+130, at least 60 samples. From the route ahead nearest the chevron, just
+above it (`hud_geo_car_x/y`, 541,250: rows 233-265 on the 2026-11-08
+frames; `hud_car_y`'s 360 was the 2026-11-03 frame's view, and the view
+can move it), the shortest walk over the route and through any box it
+touches (a box often covers the junction) to its far end is the route.
+The first point turning more than 25 degrees is the bend; a box crossed
+first is judged by the way the route comes out of it against the way it
+went in, the bend then where it went in and the box the label. The side
+is named only from 45 degrees (a fork or the road's own curve names
+none), and the walk stops at that first bend either way. `geo` in
+hud.json: `x`,`y` the bend, `side` left/right/"", `angle` (right
+positive), `arc` (px along the route from the chevron), `label` the box
+[x,y,w,h] or null, `conf` (0 none, 60 straight on, less for a bend judged
+across a box, little route past it, more than one way out of the box),
+`passed` (the route leaving the chevron sideways, a bend within 40 px of
+it, no route ahead when one was found within 5 s and no box covers the
+spot, or a bend within 120 px followed within 10 s by none or one 120 px
+farther), `at` the trace's time (hudguide counts traces by it: hud.json
+is rewritten on any change, the same trace in it). One read is about 0.15 ms on an Apple M-series host. On the
+2026-11-08 frames (`test/data/map-route-*.yuv`, street names and road
+numbers painted over): a box the card called right 450 m reads right 73
+degrees; another (card: right 190 m) 39 degrees out to the left, no side;
+the same junction on another route left 70 degrees. The second
+disagrees with the card, unexplained (the white junction arrow is under
+the box), so the map's side is not used yet: with `hud_geo_next = 1`
+(local conf, 0 by default, until the car's pairs show at least 95 %
+agreement with the card), after a passed turn hudguide shows the next
+turn from the map: plain left or right (never slight, sharp, a U-turn or
+a roundabout), no distance and no street (as `hud_reader = map` sends:
+"No distance"), source `map`, once three heartbeats running agree (conf
+at least 60, not passed), gone after two without; it may chime once, the
+card coming back on the same side keeps its uid (no second chime), on
+another side it wins with a new one. Reading the street from the box is
+for later (Waze's own font, wrapping mid-word).
+
+**Calibration pairs (car only, off by default).** Nothing is recorded
+until you create the flag file (`touch /tmp/jap-woc-hud-dump` on the unit;
+`rm` it to stop). While `hud_dump_flag` exists, the render
+also writes the cluster map once a second as `hud_dump_dir/map-<ms>.yuv`
+(I420, 0.8 MB each, at most `hud_dump_max` a run), and hudguide appends
+one line a second to `hud_dump_dir/pairs.csv` (at most 2 MB): `at` (the
+wall clock in ms, as the frames' names), what it sends (`source`,
+`maneuver`, `distance`, `street`), `kmh`, `route`, `map` (the white
+arrow), and the `geo_*` fields, so the card's side, the traced side and
+the white arrow's can be compared. Both make the folder writable by all
+(sticky), as they run as different users.
+
+**Route calibration (car only).**
+1. With Waze guiding on the cluster, `jap-waze-on-cluster -c <conf> run
+   map-dump` a few times (a straight road, a turn, day and night); each
+   writes the next map frame as `hud_dump_dir/map-<time>-<w>x<h>.yuv` (I420)
+   and `.ppm` (to look at). Then stop the navigation and dump a few more.
+2. On the Mac: `python3 tools/route_calibrate.py --on <guiding .yuv> --off
+   <others>` prints the chroma bins only the route frames have, each
+   frame's count, and the three lines to set.
+3. Set `hud_route_uv`, `hud_route_ymin` and `hud_route_min_px` in
+   `jap-waze-on-cluster.local.conf`, restart `jap-waze-on-cluster.service`, and
+   check probe.txt's `route` with the navigation on (1) and off (0).
+
 The backends share one small interface (`HudBackend`, `src/hud_arrows.h`).
 
 **Calibration (`hud_reader = banner` only; the card and the map need
-none, the card's digits need `tools/hud_font_templates.py`).** Waze's icons and font are not shipped here: the
+none, the card's digits and street need `tools/hud_font_templates.py`).** Waze's icons and font are not shipped here: the
 built-in templates are our own drawings and stay off for the icons
 (`hud_builtin_icons = 0`), so no arrows show until the folder has templates.
 1. Capture: with Waze guiding on the cluster, `touch /tmp/jap-woc-hud-dump` on
@@ -616,7 +735,7 @@ Settings are in `jap-waze-on-cluster.conf` (documented inline). Overrides go in
 
 ## The patch
 
-`patch/carplay_patch.js` (Node 8, no dependencies) makes four edits after a
+`patch/carplay_patch.js` (Node 8, no dependencies) makes five edits after a
 verified full backup. `patch/carplay_locate.js` finds each edit's site in the
 build by its code and data and checks it before any write, so the patch
 applies to any carplay build in which every site is found exactly once and
@@ -634,12 +753,21 @@ Its sites:
 | sink | second-stream sink URL: stock `avb://`, or `udp://…`, `file://…` | ≤ 59 B at `0x2a20b0` |
 | selfstart | `onSuggestUi`'s `setStreamStatus(AVAILABLE)` call → `requestStream()` | rel32 at `0x18176c` |
 | resolution | IC_HIGH geometry → 1088x480 px at 138x61 mm, safe area 504x228+286+72 | four 8 B immediates at `0x20ca32`–`0x20ca7c` |
+| fps (1.2.0) | the cluster display asks the phone for at most 15 frames a second, not 60 | 7 B at `0x207a24` |
+
+The cluster shows at most 15 pictures a second (`picture_fps`), so the
+frames above that were decoded for nothing: with the fps edit the decode
+went from 41 % to 16 % of a core on the car, with no corrupt picture. It
+applies from the next CarPlay session after a head-unit start, and is
+reverted with the others. A patch from 1.1.1 (four edits) still reads as
+enabled; the install or Enable map adds the fps edit. PATCH.md "Edit 5".
 
 `patchd` and the install hook apply `--panel high` with the stock sink.
 `woc-patch.sh` is the shell path, for experiments: `status`, `probe`,
 `verify`, `revert [--force]`, and `apply high|mid` with `--avb` (the app's
 sink), no flag (`udp://127.0.0.1:20557`), `--capture` (FIFO) or `--sink
-<url>`, plus `--res WxH|stock`, `--safe WxH+X+Y|full` and `--unproven`. It
+<url>`, plus `--res WxH|stock`, `--safe WxH+X+Y|full`, `--fps N|stock` and
+`--unproven`. It
 remounts `/` read-write only for the write. **Never `systemctl stop` or
 `restart` carplay**: CarPlay dumps core on SIGTERM, which power-cycles the
 head unit, and so does any other failed CarPlay end; with the drop-in
@@ -752,6 +880,15 @@ in slot `0x100` under the gauges with normal colours, readable text and
 correct transitions. A 10-packet slice of a car capture is the depacketiser's
 golden test (`test/data/stream15_start.rtp`).
 
+1.2.0 runs on the same car (carplay 22.28.3) since 2026-11-08: the fps edit
+(the stream at about 15.6 fps, no corrupt picture), the street templates
+loaded, the speed read by speedd. It has not been checked on a drive yet.
+The route trace, the held turn ending once passed and the next turn from
+the map are checked only against frames recorded on that car
+(`test/data/map-route-*.yuv`); each car needs its own route calibration
+(`tools/route_calibrate.py`): the held turn stays off until then, and the
+next turn from the map until `hud_geo_next = 1`.
+
 Open: how the unit's hardware MSDK conceals a lost slice or picture, and
 whether it flags those frames `Corrupted` (and propagates the flag to the
 frames that reference them); that the phone's SPS is exactly the advertised 1088x480; how packed
@@ -766,6 +903,7 @@ the HUD arrows read them back from the banner ("HUD arrows").
 make test                         # host tests: NAL, RTP, keyframe wait, the turn-box setting, the map
                                   # feed against cluster-render, the HUD banner recogniser and HUD arrows,
                                   # the renderer's kit, patch/patchd/recovery/DLT, hudguide,
+                                  # speedd, the route trace and route_calibrate.py's self-test,
                                   # the journal and logs services
 make test-x86                     # the C++ tests with the unit's toolchain in Docker (SSE2 paths)
 make target                       # build/target/jap-waze-on-cluster in Docker, imports checked

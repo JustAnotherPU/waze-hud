@@ -163,14 +163,15 @@ std::string VideoProducer::probe_report() const
     }
     {
         std::lock_guard<std::mutex> lock(frame_mutex_);
-        char line[320];
+        char line[400];
         std::snprintf(line, sizeof line,
                       "rounding: %u bits a level on the decoder thread, %lld us a frame (max %lld)\n"
                       "backlog: the oldest packet waiting %lld ms, the longest wait %lld ms; %llu frames decoded "
-                      "without a picture to catch up%s\n",
+                      "without a picture to catch up, %llu above the picture rate (one per %lld ms)%s\n",
                       cfg_.tex_level_bits, (long long)round_us_.mean(), (long long)round_us_.max,
                       (long long)(queue_.oldest_wait_us() / 1000), (long long)(backlog_.max_wait_us() / 1000),
-                      (unsigned long long)backlog_.skipped_total(),
+                      (unsigned long long)backlog_.skipped_total(), (unsigned long long)throttled_.load(),
+                      (long long)picture_interval_ms_.load(),
                       backlog_.behind(cld::now_ms()) ? "; the decoder is behind the stream" : "");
         r += line;
     }
@@ -299,8 +300,10 @@ bool VideoProducer::start_decoder(std::string *err)
 void VideoProducer::decode(const uint8_t *data, size_t len, bool end_of_au)
 {
     std::string derr;
+    const bool newest = !(packet_ && packet_->later_frame);
+    throttling_ = newest && !picture_gate_.due(cld::now_ms(), picture_interval_ms_.load());
     const bool ok = decoder_.feed(data, len, [this](const VideoFrame &f) { on_frame(f); }, &derr, end_of_au,
-                                  !(packet_ && packet_->later_frame));
+                                  newest && !throttling_);
     const bool decoding = decoder_.decoding();
     if (ok && decoding == decoding_)
         return;
@@ -326,7 +329,10 @@ void VideoProducer::on_frame(const VideoFrame &f)
         const std::string line = health_.frame(cld::now_ms(), f.corrupted, gaps_.after_loss());
         if (!line.empty())
             log_info("%s", line.c_str());
-        backlog_.skipped();
+        if (throttling_)
+            throttled_++;
+        else
+            backlog_.skipped();
         if (f.w == cfg_.tex_width && f.h == cfg_.tex_height)
             last_frame_ms_ = now_us() / 1000;
         decoded_total_++;
@@ -335,6 +341,7 @@ void VideoProducer::on_frame(const VideoFrame &f)
     /* Rounded here, in place, on the decoder thread, so neither the main loop
      * nor the renderer spends time on it; the decoder's buffer then becomes
      * the newest frame and the replaced one goes back to the decoder. */
+    picture_gate_.made(cld::now_ms(), picture_interval_ms_.load());
     const int64_t t0 = now_us();
     if (cfg_.tex_level_bits)
         round_levels(f.atlas->data(), f.atlas->data(), f.atlas->size(), cfg_.tex_level_bits);
@@ -361,17 +368,21 @@ void VideoProducer::on_frame(const VideoFrame &f)
     round_us_.add(round_us);
     back_w_ = f.w;
     back_h_ = f.h;
+    /* a change not taken yet carries over to the frame replacing it */
+    back_changed_ = changed || (back_dirty_ && back_changed_);
     back_dirty_ = true;
     back_id_ = decoded_total_.fetch_add(1) + 1;
 }
 
-bool VideoProducer::take(std::vector<uint8_t> *frame, uint64_t *id)
+bool VideoProducer::take(std::vector<uint8_t> *frame, uint64_t *id, bool *changed)
 {
     std::lock_guard<std::mutex> lock(frame_mutex_);
     if (!back_dirty_ || back_w_ != cfg_.tex_width || back_h_ != cfg_.tex_height)
         return false;
     frame->swap(back_);
     *id = back_id_;
+    if (changed)
+        *changed = back_changed_;
     back_dirty_ = false;
     char drain[8];
     while (ready_[0] >= 0 && read(ready_[0], drain, sizeof drain) > 0) {
