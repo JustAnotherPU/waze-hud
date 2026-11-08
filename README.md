@@ -41,25 +41,24 @@ of the HUD.*
 
 ## What's new in 1.2.0
 
-- **The cluster map at 15 fps.** A fifth edit to `carplay` asks the phone
+- The cluster map runs at 15 fps. A fifth edit to `carplay` asks the phone
   for at most 15 frames a second on the cluster, the rate the cluster shows
   anyway. On the test car the decode went from 41 % to 16 % of a CPU core.
   It follows the rules of the other edits: tested build only, left alone on
   other cluster codings, a second press on untested builds, reverted on
   removal and by boot recovery.
-- **The street name.** The street from the CarPlay card goes to the HUD,
-  under the distance. Like the distance, it needs templates you make from
-  your own copy of SF Pro (see Install).
-- **The turn kept while CarPlay is hidden.** With another app on the centre
-  screen, the last turn stays on the HUD and its distance counts down with
-  the vehicle speed, read by a new small service
-  (`jap-waze-on-cluster-speedd`). It needs the route calibration below and
-  is off until then.
-- **The route traced on the cluster map.** A kept turn ends once the map
+- The street name from the CarPlay card goes to the HUD, under the
+  distance. Like the distance, it needs templates you make from your own
+  copy of SF Pro (see Install).
+- With another app on the centre screen, the last turn stays on the HUD and
+  its distance counts down with the vehicle speed, read by a new small
+  service (`jap-waze-on-cluster-speedd`). It needs the route calibration
+  below and is off until then.
+- The route is traced on the cluster map: a kept turn ends once the map
   shows it is passed, or after 10 minutes at the latest.
-- **The next turn from the map** (off by default, `hud_geo_next = 1`):
-  after a passed turn, a plain left or right read from the map, with no
-  distance.
+- After a passed turn, the next turn can come from the map: a plain left or
+  right, with no distance. It is off by default; set `hud_geo_next = 1` to
+  turn it on.
 
 ## Requirements
 
@@ -95,8 +94,8 @@ run that build patched (a CarPlay crash restarts the head unit, and boot
 recovery restores the original after two). Reports from other cars and
 firmware are welcome in the issues.
 
-Version 1.2.0 has run on the same car (`carplay` 22.28.3) since 2026-11-08:
-all its services are up, the vehicle speed is read and the street templates
+The same code, in the author's private build, has run on the same car
+(`carplay` 22.28.3) since 2026-11-08: all its services are up, the vehicle speed is read and the street templates
 load. It has not been validated on a drive yet. The route features (the
 kept turn, the route trace, the next turn from the map) need a calibration
 for each car and have only been checked against frames recorded on this
