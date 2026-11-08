@@ -49,7 +49,8 @@ var BG_HOLD_S = 600, CARD_FRESH_MS = 5000, SPEED_LIVE_MS = 3000, SPEED_FREEZE_MS
  * 10 m steps and the speed's error, well past the turn */
 var PASSED_GEO_M = -150, GEO_MIN_CONF = 60, NEXT_BEATS = 3, NEXT_MISSES = 2;
 /* Calibration pairs (README.md "HUD arrows"): while hud_dump_flag exists,
- * one line a second to <hud_dump_dir>/pairs.csv, at most PAIRS_MAX bytes. */
+ * one line a second to <hud_dump_dir>-pairs/pairs.csv, at most PAIRS_MAX
+ * bytes: a folder of this user's own, as the render's is the render's. */
 var DUMP_FLAG = '/tmp/jap-woc-hud-dump', DUMP_DIR = '/tmp/jap-woc-hud', PAIRS_MAX = 2 * 1024 * 1024;
 var PAIRS_HEAD = 'at,source,maneuver,distance,street,kmh,route,map,geo_side,geo_angle,geo_x,geo_y,geo_arc,geo_conf,geo_passed,geo_label\n';
 
@@ -107,10 +108,11 @@ function confValue(path, key) {
 /* hud_geo_next from the local conf: on only when it says 1. */
 function geoNextOn(path) { return confValue(path, 'hud_geo_next') === '1'; }
 
-/* hud_bg_hold_s from the local conf: BG_HOLD_S unless it says a number. */
+/* hud_bg_hold_s from the local conf: BG_HOLD_S unless it says a number
+ * from 0 to 3600 (main.cpp's range). */
 function bgHoldS(path) {
     var v = parseFloat(confValue(path, 'hud_bg_hold_s'));
-    return isFinite(v) && v >= 0 ? v : BG_HOLD_S;
+    return isFinite(v) && v >= 0 && v <= 3600 ? v : BG_HOLD_S;
 }
 
 /* A statusCarSpeed2 value as {kmh, at}, or null when invalid (65535, not finite) or missing. */
@@ -244,18 +246,25 @@ function pairsLine(at, r, out, kmh) {
         Array.isArray(g.label) ? g.label.join(' ') : ''].map(q).join(',') + '\n';
 }
 
-/* The line appended to <dir>/pairs.csv (the folder made writable by all,
- * as jap-waze-on-cluster makes it; the header first), unless the file is at
- * PAIRS_MAX; errors ignored. */
+/* The line appended to <dir>/pairs.csv (the header first), unless the
+ * file is at PAIRS_MAX. dir is made 0755; one that is a symlink, not a
+ * folder or another user's is refused (it is in /tmp), as is a symlinked
+ * pairs.csv. false on any error. */
 function appendPairs(dir, line) {
+    var fd = -1;
     try {
-        try { fs.mkdirSync(dir, parseInt('1777', 8)); fs.chmodSync(dir, parseInt('1777', 8)); } catch (e) { /* exists */ }
-        var f = dir + '/pairs.csv', size = -1;
-        try { size = fs.statSync(f).size; } catch (e) { /* new */ }
+        var st = null, uid = process.getuid();
+        try { st = fs.lstatSync(dir); } catch (e) { fs.mkdirSync(dir, 0o755); st = fs.lstatSync(dir); }
+        if (!st.isDirectory() || st.uid !== uid) return false;
+        if (st.mode & 0o022) fs.chmodSync(dir, 0o755);   /* 0.7.84's 1777 folder */
+        var c = fs.constants;
+        fd = fs.openSync(dir + '/pairs.csv', c.O_WRONLY | c.O_APPEND | c.O_CREAT | c.O_NOFOLLOW, 0o644);
+        var size = fs.fstatSync(fd).size;
         if (size >= PAIRS_MAX) return false;
-        fs.appendFileSync(f, (size <= 0 ? PAIRS_HEAD : '') + line);
+        fs.writeSync(fd, (size === 0 ? PAIRS_HEAD : '') + line);
         return true;
     } catch (e) { return false; }
+    finally { if (fd >= 0) fs.closeSync(fd); }
 }
 
 /* The GuidanceEventUnion value for a reading, or null for a manoeuvre the
@@ -394,7 +403,7 @@ function main(dry) {
         if (now - pairs.confAt >= 30000) {
             pairs.confAt = now;
             pairs.flag = confValue(LOCAL_CONF, 'hud_dump_flag') || DUMP_FLAG;
-            pairs.dir = confValue(LOCAL_CONF, 'hud_dump_dir') || DUMP_DIR;
+            pairs.dir = (confValue(LOCAL_CONF, 'hud_dump_dir') || DUMP_DIR) + '-pairs';
         }
         if (!fs.existsSync(pairs.flag)) return;
         var okp = appendPairs(pairs.dir, pairsLine(Date.now(), r, out, speed && now - speed.at < SPEED_LIVE_MS ? speed.kmh : undefined));

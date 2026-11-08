@@ -27,15 +27,6 @@ std::string reading_text(const Reading &r)
                                     (r.street.empty() ? "" : ", " + r.street);
 }
 
-/* The dump folder, writable by all (sticky, as /tmp): hudguide (another
- * user) writes its pairs.csv there too. Made so past the umask, and an
- * older one (0755 before 0.7.84) changed too when it is ours. */
-void make_dump_dir(const std::string &d)
-{
-    mkdir(d.c_str(), 01777);
-    chmod(d.c_str(), 01777);
-}
-
 /* The wall clock in ms, for file names hudguide's lines pair with. */
 long long wall_ms()
 {
@@ -312,10 +303,9 @@ void HudArrows::sample(const uint8_t *y, unsigned w, unsigned h, int64_t now_ms)
     }
     if (map_dump_) {
         map_dump_ = false;
-        make_dump_dir(cfg_.dump_dir);
         char n[64];
         std::snprintf(n, sizeof n, "/map-%ld-%ux%u", (long)time(nullptr), w, h);
-        if (write_map_dump(cfg_.dump_dir + n, y, w, h))
+        if (dump_dir_ok(cfg_.dump_dir) && write_map_dump(cfg_.dump_dir + n, y, w, h))
             log_info("hud: map frame written to %s%s.yuv and .ppm", cfg_.dump_dir.c_str(), n);
         else
             log_warn("hud: map dump to %s failed: %s", cfg_.dump_dir.c_str(), strerror(errno));
@@ -324,10 +314,9 @@ void HudArrows::sample(const uint8_t *y, unsigned w, unsigned h, int64_t now_ms)
      * (at: the wall clock in ms), the frame only (0.8 MB each) */
     if (flag_ && map_dumped_ < cfg_.dump_max && now_ms - last_map_dump_ms_ >= 1000) {
         last_map_dump_ms_ = now_ms;
-        make_dump_dir(cfg_.dump_dir);
         char n[64];
         std::snprintf(n, sizeof n, "/map-%lld", wall_ms());
-        if (write_map_dump(cfg_.dump_dir + n, y, w, h, false))
+        if (dump_dir_ok(cfg_.dump_dir) && write_map_dump(cfg_.dump_dir + n, y, w, h, false))
             map_dumped_++;
         else
             log_warn("hud: map dump to %s failed: %s", cfg_.dump_dir.c_str(), strerror(errno));
@@ -423,7 +412,10 @@ void HudArrows::dump(const uint8_t *y, unsigned w, unsigned h, const Reading &r,
     last_dump_ms_ = now_ms;
     if (dump_left_)
         dump_left_--;
-    make_dump_dir(cfg_.dump_dir);
+    if (!dump_dir_ok(cfg_.dump_dir)) {
+        log_warn("hud: dump to %s refused: not a folder of this user", cfg_.dump_dir.c_str());
+        return;
+    }
     char n[16];
     std::snprintf(n, sizeof n, "%04u", ++dumped_);
     const std::string base = cfg_.dump_dir + "/" + n;

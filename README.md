@@ -121,7 +121,7 @@ app on top), it shows no arrow until the route calibration below is done.
 
 ### Templates for the distance and the street
 
-No font ships here, and nothing rendered from one. The distance and the
+No font file and no generated templates ship here. The distance and the
 street are read with templates you make from your own copy of SF Pro (the
 variable font, with weight and optical size); without them the arrow shows
 alone.
@@ -154,8 +154,9 @@ default) that feature is off.
 5. Check `route` in `/run/jap-waze-on-cluster/probe.txt`: 1 with the
    navigation on, 0 with it off.
 
-Recording the calibration pairs (map frames and `pairs.csv`, for comparing
-the map with the card) is off too, until you create the flag file
+Recording the calibration pairs (map frames in `/tmp/jap-woc-hud/` and
+`/tmp/jap-woc-hud-pairs/pairs.csv`, for comparing the map with the card) is
+off too, until you create the flag file
 `/tmp/jap-woc-hud-dump` on the head unit. The drawn-image backend
 (`hud_backend = image`) is an optional fallback.
 [The tool's README](native/jap-waze-on-cluster/README.md#hud-arrows) has the

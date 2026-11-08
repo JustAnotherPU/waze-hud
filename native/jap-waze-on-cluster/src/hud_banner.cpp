@@ -3,6 +3,9 @@
 #include "hud_banner.h"
 
 #include <dirent.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <cctype>
@@ -615,11 +618,35 @@ bool write_png(const std::string &path, const Gray &g)
     put32(&z, (b << 16) | a);
     chunk(&png, "IDAT", z);
     chunk(&png, "IEND", "");
-    FILE *f = std::fopen(path.c_str(), "wb");
+    FILE *f = open_dump(path, false);
     if (!f)
         return false;
     const bool ok = std::fwrite(png.data(), 1, png.size(), f) == png.size();
     return std::fclose(f) == 0 && ok;
+}
+
+bool dump_dir_ok(const std::string &dir)
+{
+    mkdir(dir.c_str(), 0755);
+    struct stat st;
+    if (lstat(dir.c_str(), &st) != 0 || !S_ISDIR(st.st_mode) || st.st_uid != geteuid()) {
+        errno = EPERM;
+        return false;
+    }
+    if (st.st_mode & 022)   /* 0.7.84 made it 1777; /tmp is sticky, so it is still ours */
+        chmod(dir.c_str(), 0755);
+    return true;
+}
+
+FILE *open_dump(const std::string &path, bool excl)
+{
+    const int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC | O_NOFOLLOW | (excl ? O_EXCL : O_TRUNC), 0644);
+    if (fd < 0)
+        return nullptr;
+    FILE *f = fdopen(fd, "wb");
+    if (!f)
+        close(fd);
+    return f;
 }
 
 bool read_pgm(const std::string &path, Gray *g)

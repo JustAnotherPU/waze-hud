@@ -116,6 +116,7 @@ test-cpp: $(CPP_TESTS)
 	$(BUILD)/host/send_gate_test
 	$(PYTHON) tools/hud_templates.py --self-test
 	$(PYTHON) tools/route_calibrate.py --self-test
+	$(PYTHON) test/tools/make_route_none.py $(BUILD)/host/map-route-none.yuv && cmp $(BUILD)/host/map-route-none.yuv test/data/map-route-none.yuv
 	$(MAKE) -C $(CR) test-kit BUILD=$(abspath $(BUILD))/kit
 
 test-x86:

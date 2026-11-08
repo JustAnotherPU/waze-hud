@@ -278,14 +278,14 @@ int route_state(const uint8_t *atlas, unsigned w, unsigned h, const RouteBounds 
 bool write_map_dump(const std::string &base, const uint8_t *atlas, unsigned w, unsigned h, bool ppm)
 {
     const uint8_t *uv = atlas + (size_t)w * h;
-    FILE *f = std::fopen((base + ".yuv").c_str(), "wb");
+    FILE *f = open_dump(base + ".yuv", true);
     bool ok = f && std::fwrite(atlas, 1, (size_t)w * h, f) == (size_t)w * h;
     for (unsigned plane = 0; ok && plane < 2; plane++)
         for (unsigned r = 0; ok && r < h / 2; r++)
             ok = std::fwrite(uv + (size_t)r * w + plane * (w / 2), 1, w / 2, f) == w / 2;
     if (f) ok = std::fclose(f) == 0 && ok;
     if (!ppm) return ok;
-    f = ok ? std::fopen((base + ".ppm").c_str(), "wb") : nullptr;
+    f = ok ? open_dump(base + ".ppm", true) : nullptr;
     ok = f && std::fprintf(f, "P6\n%u %u\n255\n", w, h) > 0;
     std::vector<uint8_t> row((size_t)w * 3);
     for (unsigned y = 0; ok && y < h; y++) {

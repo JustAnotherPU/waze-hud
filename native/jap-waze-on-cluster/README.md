@@ -508,12 +508,15 @@ until you create the flag file (`touch /tmp/jap-woc-hud-dump` on the unit;
 `rm` it to stop). While `hud_dump_flag` exists, the render
 also writes the cluster map once a second as `hud_dump_dir/map-<ms>.yuv`
 (I420, 0.8 MB each, at most `hud_dump_max` a run), and hudguide appends
-one line a second to `hud_dump_dir/pairs.csv` (at most 2 MB): `at` (the
+one line a second to `hud_dump_dir-pairs/pairs.csv`
+(`/tmp/jap-woc-hud-pairs/pairs.csv`, at most 2 MB): `at` (the
 wall clock in ms, as the frames' names), what it sends (`source`,
 `maneuver`, `distance`, `street`), `kmh`, `route`, `map` (the white
 arrow), and the `geo_*` fields, so the card's side, the traced side and
-the white arrow's can be compared. Both make the folder writable by all
-(sticky), as they run as different users.
+the white arrow's can be compared. Each writes only to a folder of its
+own user (the render's 0755, hudguide's 0755; a folder that is a symlink or
+another user's is refused, and no file is written through a symlink or
+over an existing frame), so copy both folders off the unit.
 
 **Route calibration (car only).**
 1. With Waze guiding on the cluster, `jap-waze-on-cluster -c <conf> run
@@ -775,6 +778,10 @@ loaded, a SIGKILL is a clean exit.
 `revert` restores any binary of the backup's build
 (`/usr/bin/carplay.jap-orig`), and refuses another build (a firmware update)
 unless given `--force`.
+A build that 1.1.1 patched with `--unproven` and whose fps site cannot be
+located reads as a conflict after the update, with an `fps:` reason (`fps:
+IC display builder not found`, say); Disable map, the removal and boot
+recovery still restore the original from the whole backup.
 
 ## The Android Auto patch
 
@@ -885,7 +892,8 @@ golden test (`test/data/stream15_start.rtp`).
 loaded, the speed read by speedd. It has not been checked on a drive yet.
 The route trace, the held turn ending once passed and the next turn from
 the map are checked only against frames recorded on that car
-(`test/data/map-route-*.yuv`); each car needs its own route calibration
+(`test/data/map-route-{right,short,left}.yuv`, plus a synthetic one with
+no route); each car needs its own route calibration
 (`tools/route_calibrate.py`): the held turn stays off until then, and the
 next turn from the map until `hud_geo_next = 1`.
 

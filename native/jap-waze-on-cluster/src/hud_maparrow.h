@@ -104,8 +104,8 @@ unsigned route_pixels(const uint8_t *atlas, unsigned w, unsigned h, const RouteB
 int route_state(const uint8_t *atlas, unsigned w, unsigned h, const RouteBounds &b);
 
 /* The atlas as base.yuv (I420: Y, U, V planes) and, with ppm, base.ppm
- * (full-range BT.601, as the map shader draws it, chroma nearest); false on
- * an error. */
+ * (full-range BT.601, as the map shader draws it, chroma nearest), both new
+ * files (open_dump); false on an error or when one exists. */
 bool write_map_dump(const std::string &base, const uint8_t *atlas, unsigned w, unsigned h, bool ppm = true);
 
 }  // namespace woc

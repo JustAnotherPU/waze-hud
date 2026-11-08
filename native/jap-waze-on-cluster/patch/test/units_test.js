@@ -74,4 +74,12 @@ assert(!c.enable.some(function (e) { return /journal\.service|logs(-fw)?\.servic
  * by themselves, are left to run out their window. */
 assert(c.restart.indexOf('jap-waze-on-cluster-journal.service') >= 0);
 assert(c.restart.indexOf('jap-waze-on-cluster-logs.service') < 0 && c.restart.indexOf('jap-waze-on-cluster-logs-fw.service') < 0);
-console.log('ok   journal and logs units: in recmgr, ordered against none of the head unit\'s, started late or on demand, no core dumps, root only in node and the firewall unit');
+/* The HUD guidance and the speed service: in recmgr, enabled at boot,
+ * restarted by an update (a new one starts at the next boot instead). */
+['jap-waze-on-cluster-hudguide', 'jap-waze-on-cluster-speedd'].forEach(function (name) {
+    assert(c.units.some(function (x) { return x.name === name + '.service'; }), name + ' installed');
+    assert(c.recmgr.indexOf(name) >= 0, name + ' in recmgr');
+    assert(c.restart.indexOf(name + '.service') >= 0, name + ' restarted on an update');
+    assert(c.enable.some(function (e) { return e.unit === name + '.service' && e.target === 'multi-user.target'; }), name + ' enabled');
+});
+console.log('ok   journal and logs units: in recmgr, ordered against none of the head unit\'s, started late or on demand, no core dumps, root only in node and the firewall unit; hudguide and speedd in recmgr, restart and enable');

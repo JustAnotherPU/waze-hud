@@ -15,7 +15,9 @@
  *   hud_geo_next is off); the bend where the route goes into the box;
  * - map-route-left: the same junction, another route, out of the box's
  *   left side: left;
- * - map-route-none (no route): nothing, passed (no route ahead);
+ * - map-route-none, synthetic (test/tools/make_route_none.py: Waze's night
+ *   background, roads, parks and the dark chevron, no route colour):
+ *   nothing, passed (no route ahead);
  * - drawn frames: a straight route (found, no bend), a right angle turn
  *   with no box (right, the bend at the corner), up then up-left (left),
  *   the route leaving the chevron sideways or bending within 40 px of it

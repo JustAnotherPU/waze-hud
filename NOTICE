@@ -8,7 +8,7 @@ their original copyright and license headers; files JustAnotherPU added
 carry their own.
 
 This file is the prominent notice required by section 5(a) of the GNU GPL
-version 3: JustAnotherPU modified the 114 files listed below (38 added, 76
+version 3: JustAnotherPU modified the 115 files listed below (39 added, 76
 changed), dated 2026-11-04 to 2026-11-08.
 
 What changed, in short:
@@ -66,6 +66,7 @@ Files added:
   native/jap-waze-on-cluster/test/hud_maparrow_test.cpp
   native/jap-waze-on-cluster/test/hud_route_test.cpp
   native/jap-waze-on-cluster/test/send_gate_test.cpp
+  native/jap-waze-on-cluster/test/tools/make_route_none.py
   native/jap-waze-on-cluster/tools/hud_font_templates.py
   native/jap-waze-on-cluster/tools/hud_templates.py
   native/jap-waze-on-cluster/tools/route_calibrate.py

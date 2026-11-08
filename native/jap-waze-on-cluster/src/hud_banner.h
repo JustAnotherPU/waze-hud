@@ -170,6 +170,13 @@ std::string parse_distance(const std::string &text);
 
 /* An 8-bit grey PNG (stored deflate) of g, and a binary PGM reader. */
 bool write_png(const std::string &path, const Gray &g);
+
+/* Dumps go to /tmp: dump_dir_ok makes dir (0755) and is true only for a
+ * folder (not a symlink) of this uid, an older 1777 one made 0755; false
+ * with errno EPERM otherwise. open_dump opens a file in it for writing,
+ * never through a symlink: with excl a new one only, else truncated. */
+bool dump_dir_ok(const std::string &dir);
+FILE *open_dump(const std::string &path, bool excl);
 bool read_pgm(const std::string &path, Gray *g);
 
 }  // namespace woc

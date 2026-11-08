@@ -382,7 +382,7 @@ async function main() {
     fs.mkdirSync(TGT + '.jap-orig.json');
     r = hook('deactivate');
     ok('failure after the write: exit 0, the revert pending, carplay\'s file still linked, / read-only',
-        r.code === 0 && /dropping .*woc-orig.json/.test(r.out) && disk() === sha(SRCBUF) && marker() && marker().action === 'revert' &&
+        r.code === 0 && /dropping .*jap-orig\.json/.test(r.out) && disk() === sha(SRCBUF) && marker() && marker().action === 'revert' &&
         ino(RUNNING) === patchedIno && ro(), JSON.stringify(r.result));
     fs.rmdirSync(TGT + '.jap-orig.json');
 

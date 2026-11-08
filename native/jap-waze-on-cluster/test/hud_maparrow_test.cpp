@@ -22,6 +22,9 @@
 #include <string>
 #include <vector>
 
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include "../src/hud_draw.h"
 #include "../src/hud_maparrow.h"
 
@@ -33,6 +36,12 @@ static void ok(const std::string &name, bool cond)
 {
     std::printf("%-4s %s\n", cond ? "ok" : "FAIL", name.c_str());
     if (!cond) failures++;
+}
+
+static unsigned stat_mode(const std::string &p)
+{
+    struct stat st;
+    return stat(p.c_str(), &st) == 0 ? st.st_mode : 0;
 }
 
 static const unsigned W = 1088, H = 480, CX = 544, CY = 360;
@@ -190,7 +199,10 @@ int main()
         a[8 * aw + 0] = 50;   /* luma under the first one: too dark */
         ok("route: dark luma is not the line", route_pixels(a.data(), aw, ah, b) == 2);
         const std::string base = "/tmp/woc-map-dump-test";
+        std::remove((base + ".yuv").c_str());
+        std::remove((base + ".ppm").c_str());
         ok("map dump: written", write_map_dump(base, a.data(), aw, ah));
+        ok("map dump: never over a file already there", !write_map_dump(base, a.data(), aw, ah));
         FILE *f = std::fopen((base + ".yuv").c_str(), "rb");
         std::vector<uint8_t> yuv(aw * ah * 3 / 2 + 1);
         const size_t n = f ? std::fread(yuv.data(), 1, yuv.size(), f) : 0;
@@ -204,6 +216,21 @@ int main()
         ok("map dump: a PPM", m == 13 && std::string(hdr, 13) == "P6\n64 32\n255\n");
         std::remove((base + ".yuv").c_str());
         std::remove((base + ".ppm").c_str());
+
+        char tmpl[] = "/tmp/woc-dumpdir-XXXXXX";
+        const std::string d = mkdtemp(tmpl) ? tmpl : "";
+        ok("dump folder: made, 0755", dump_dir_ok(d + "/dump") && (stat_mode(d + "/dump") & 07777) == 0755);
+        chmod((d + "/dump").c_str(), 01777);
+        ok("dump folder: an older 1777 one of ours made 0755", dump_dir_ok(d + "/dump") && (stat_mode(d + "/dump") & 07777) == 0755);
+        ok("dump folder: a symlink refused", symlink((d + "/dump").c_str(), (d + "/link").c_str()) == 0 && !dump_dir_ok(d + "/link"));
+        if (geteuid() != 0)
+            ok("dump folder: another user's (root's) refused", !dump_dir_ok("/"));
+        ok("dump file: not through a symlink", symlink((d + "/victim").c_str(), (d + "/dump/0001-banner.png").c_str()) == 0 &&
+                                                  !write_png(d + "/dump/0001-banner.png", Gray(4, 4, 0)) && access((d + "/victim").c_str(), F_OK) != 0);
+        ok("dump file: a .yuv not through a symlink", symlink((d + "/victim").c_str(), (d + "/dump/m.yuv").c_str()) == 0 &&
+                                                         !write_map_dump(d + "/dump/m", a.data(), aw, ah, false) && access((d + "/victim").c_str(), F_OK) != 0);
+        for (const char *f : {"/dump/0001-banner.png", "/dump/m.yuv", "/link", "/dump", ""})
+            std::remove((d + f).c_str());
     }
 
     /* cost */
