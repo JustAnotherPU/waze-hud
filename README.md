@@ -103,10 +103,9 @@ one.
 
 ## Install
 
-1. In the Store, add the GitHub source `robertnisipeanu/idrive-apps` on
-   Releases (`robertnisipeanu/idrive-apps:releases`), if it is not there.
-2. Add the GitHub source `JustAnotherPU/waze-hud` on Releases
-   (`JustAnotherPU/waze-hud:releases`).
+1. In the Store, add the GitHub source `robertnisipeanu/idrive-apps` and pick
+   Releases, if it is not there. Type only `owner/repo`: the Store refuses a `:releases` at the end.
+2. Add the GitHub source `JustAnotherPU/waze-hud` and pick Releases.
 3. Install **Waze HUD**. The Store installs what it requires first:
    `cluster-render`, then the tool `jap-waze-on-cluster`.
 4. Restart the head unit when the Store says so: the CarPlay patch takes
