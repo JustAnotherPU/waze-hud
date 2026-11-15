@@ -7,7 +7,7 @@ turn on BMW's own HUD arrows. Everything is done from the HMI; no
 shell is needed.
 
 Install it from this repository's catalog (Store source
-`JustAnotherPU/waze-hud:releases`) through the
+`JustAnotherPU/waze-hud`, on Releases) through the
 [mgu Store](https://github.com/robertnisipeanu/mgu-store). It requires
 jap-waze-on-cluster 1.1.1 or later (1.2.0 adds the street name, a 15 fps
 cluster stream and the turn kept while CarPlay is hidden; this app needs
