@@ -117,6 +117,11 @@ The HUD shows Waze's arrow, distance and street, read from the CarPlay card
 on the centre screen. Without the card (Waze's own screen hidden, another
 app on top), it shows no arrow until the route calibration below is done.
 
+The reader does not recognise roundabouts or other icons that are not a plain
+arrow, such as arrival or a motorway exit. It reads every icon as an arrow
+from its angle, so a roundabout can show on the HUD as a plain left or right
+turn. At roundabouts, follow Waze on the centre screen.
+
 ### Templates for the distance and the street
 
 No font file and no generated templates ship here. The distance and the
