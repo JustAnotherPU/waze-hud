@@ -11,6 +11,8 @@ CarPlay sends Apple Maps' and Google Maps' guidance: **BMW's own HUD arrow,
 distance and street name, for Waze**. The CarPlay (or Android Auto) map is
 shown on the instrument cluster as well, at 15 frames a second.
 
+Write-up, with how it reads the turn card and where it can go wrong: [Waze HUD on Everything Patched](https://everythingpatched.com/posts/waze-hud/).
+
 ![How it works: the iPhone runs Waze over CarPlay; on the head unit, the patched carplay program sends the cluster map, which jap-waze-on-cluster decodes and cluster-render draws on the instrument cluster, while Waze's turn card is read from the CarPlay screen and hudguide passes it to BMW's navigation for the HUD](docs/media/how-it-works.svg)
 
 *How it works: the map goes to the instrument cluster as video; the next turn
